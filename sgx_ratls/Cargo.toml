@@ -1,0 +1,13 @@
+[package]
+name = "sgx_ratls"
+version = "0.1.0"
+edition = "2021"
+license = "MIT/Apache-2.0"
+description = "Intel SGX verification of Remote Attestation based TLS certificate"
+
+[dependencies]
+rustls = { version = "0.21", features = ["dangerous_configuration"] }
+
+[dev-dependencies]
+base64 = "0.21"
+x509-parser = "0.15"
