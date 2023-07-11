@@ -1,6 +1,7 @@
 [workspace]
 members = [
+    "sgx_quote",
     "sgx_quote_verify",
+    "sgx_pck_extension",
     "sgx_ratls",
-    "sgx_pck_extension"
 ]

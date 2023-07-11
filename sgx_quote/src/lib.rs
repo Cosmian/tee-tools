@@ -1,6 +1,9 @@
-use anyhow::{anyhow, Result};
 use core::fmt;
 use scroll::Pread;
+
+pub mod error;
+
+use crate::error::SGXQuoteError;
 
 pub const QUOTE_HEADER_SIZE: usize = 48;
 pub const QUOTE_REPORT_BODY_SIZE: usize = 384;
@@ -175,39 +178,43 @@ pub struct EcdsaSigData {
     pub qe_report_signature: [u8; 64],
 }
 
-pub fn parse_quote_header(raw_quote: &[u8]) -> Result<QuoteHeader> {
+pub fn parse_quote_header(raw_quote: &[u8]) -> Result<QuoteHeader, SGXQuoteError> {
     raw_quote
         .pread_with::<QuoteHeader>(0, scroll::LE)
-        .map_err(|e| anyhow!("Parse quote header failed: {:?}", e))
+        .map_err(|_| SGXQuoteError::ParsingHeaderError)
 }
 
-pub fn parse_report_body(raw_quote: &[u8]) -> Result<ReportBody> {
+pub fn parse_report_body(raw_quote: &[u8]) -> Result<ReportBody, SGXQuoteError> {
     raw_quote
         .pread_with::<ReportBody>(QUOTE_HEADER_SIZE, scroll::LE)
-        .map_err(|e| anyhow!("Parse report body failed: {:?}", e))
+        .map_err(|_| SGXQuoteError::ParsingReportBodyError)
 }
 
-pub fn parse_quote_body(raw_quote: &[u8]) -> Result<Quote> {
+pub fn parse_quote_body(raw_quote: &[u8]) -> Result<Quote, SGXQuoteError> {
     Ok(Quote {
         header: parse_quote_header(raw_quote)?,
         report_body: parse_report_body(raw_quote)?,
     })
 }
 
-pub fn parse_ecdsa_sig_data(raw_quote: &[u8]) -> Result<EcdsaSigData> {
+pub fn parse_ecdsa_sig_data(raw_quote: &[u8]) -> Result<EcdsaSigData, SGXQuoteError> {
     raw_quote
         // shift 4 bytes for the signature_data_len (u32)
         .pread_with::<EcdsaSigData>(QUOTE_BODY_SIZE + 4, scroll::LE)
-        .map_err(|e| anyhow!("Parse auth data failed: {:?}", e))
+        .map_err(|_| SGXQuoteError::ParsingEcdsaSigDataError)
 }
 
-pub fn parse_auth_and_cert(raw_quote: &[u8]) -> Result<(AuthData, CertificationData)> {
+pub fn parse_auth_and_cert(
+    raw_quote: &[u8],
+) -> Result<(AuthData, CertificationData), SGXQuoteError> {
     let offset = &mut (QUOTE_BODY_SIZE + 4 + QUOTE_ECDSA_SIG_DATA_SIZE);
     let qe_auth_data_len = raw_quote
         .gread_with::<u16>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse QE auth data length failed: {:?}", e))?;
+        .map_err(|_| SGXQuoteError::ParsingAuthDataError)?;
     let mut qe_auth_data: Vec<u8> = vec![0; qe_auth_data_len as usize];
-    raw_quote.gread_inout(offset, &mut qe_auth_data)?;
+    raw_quote
+        .gread_inout(offset, &mut qe_auth_data)
+        .map_err(|_| SGXQuoteError::ParsingAuthDataError)?;
     assert!(
         qe_auth_data.len() == qe_auth_data_len as usize,
         "unexpected qe_auth_data_len"
@@ -215,14 +222,17 @@ pub fn parse_auth_and_cert(raw_quote: &[u8]) -> Result<(AuthData, CertificationD
 
     let certification_data_type = raw_quote
         .gread_with::<u16>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse certification data type failed: {:?}", e))?;
+        .map_err(|_| SGXQuoteError::ParsingCertDataError)?;
     println!("certification_data_type: {}", certification_data_type);
 
     let certification_data_len = raw_quote
         .gread_with::<u32>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse certification data length failed: {:?}", e))?;
+        .map_err(|_| SGXQuoteError::ParsingCertDataError)?;
     let mut certification_data: Vec<u8> = vec![0; certification_data_len as usize];
-    raw_quote.gread_inout(offset, &mut certification_data)?;
+    raw_quote
+        .gread_inout(offset, &mut certification_data)
+        .map_err(|_| SGXQuoteError::ParsingCertDataError)?;
+
     assert!(
         certification_data.len() == certification_data_len as usize,
         "unexpected certification_data_len"
@@ -239,29 +249,34 @@ pub fn parse_auth_and_cert(raw_quote: &[u8]) -> Result<(AuthData, CertificationD
     ))
 }
 
-pub fn parse_quote(raw_quote: &[u8]) -> Result<(Quote, EcdsaSigData, AuthData, CertificationData)> {
+pub fn parse_quote(
+    raw_quote: &[u8],
+) -> Result<(Quote, EcdsaSigData, AuthData, CertificationData), SGXQuoteError> {
     let offset = &mut 0usize;
 
     let header = raw_quote
         .gread_with::<QuoteHeader>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse quote header failed: {:?}", e))?;
+        .map_err(|_| SGXQuoteError::ParsingHeaderError)?;
     let report_body = raw_quote
         .gread_with::<ReportBody>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse report body failed: {:?}", e))?;
+        .map_err(|_| SGXQuoteError::ParsingReportBodyError)?;
 
     let signature_data_len = raw_quote
         .gread_with::<u32>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse signature data length failed: {:?}", e))?;
+        .map_err(|_| SGXQuoteError::ParsingEcdsaSigDataError)?;
 
     let ecdsa_sig_data = raw_quote
         .gread_with::<EcdsaSigData>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse ecdsa sig data failed: {:?}", e))?;
+        .map_err(|_| SGXQuoteError::ParsingEcdsaSigDataError)?;
 
     let qe_auth_data_len = raw_quote
         .gread_with::<u16>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse QE auth data length failed: {:?}", e))?;
+        .map_err(|_| SGXQuoteError::ParsingAuthDataError)?;
     let mut qe_auth_data: Vec<u8> = vec![0; qe_auth_data_len as usize];
-    raw_quote.gread_inout(offset, &mut qe_auth_data)?;
+    raw_quote
+        .gread_inout(offset, &mut qe_auth_data)
+        .map_err(|_| SGXQuoteError::ParsingAuthDataError)?;
+
     assert!(
         qe_auth_data.len() == qe_auth_data_len as usize,
         "unexpected qe_auth_data_len"
@@ -272,14 +287,17 @@ pub fn parse_quote(raw_quote: &[u8]) -> Result<(Quote, EcdsaSigData, AuthData, C
 
     let certification_data_type = raw_quote
         .gread_with::<u16>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse certification data type failed: {:?}", e))?;
+        .map_err(|_| SGXQuoteError::ParsingCertDataError)?;
     println!("certification_data_type: {}", certification_data_type);
 
     let certification_data_len = raw_quote
         .gread_with::<u32>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse certification data length failed: {:?}", e))?;
+        .map_err(|_| SGXQuoteError::ParsingCertDataError)?;
     let mut certification_data: Vec<u8> = vec![0; certification_data_len as usize];
-    raw_quote.gread_inout(offset, &mut certification_data)?;
+    raw_quote
+        .gread_inout(offset, &mut certification_data)
+        .map_err(|_| SGXQuoteError::ParsingCertDataError)?;
+
     assert!(
         certification_data.len() == certification_data_len as usize,
         "unexpected certification_data_len"
@@ -309,18 +327,9 @@ pub fn parse_quote(raw_quote: &[u8]) -> Result<(Quote, EcdsaSigData, AuthData, C
 #[cfg(test)]
 mod tests {
     use super::*;
-    use env_logger::Target;
-
-    fn init() {
-        let mut builder = env_logger::builder();
-        let builder = builder.is_test(true);
-        let builder = builder.target(Target::Stdout);
-        let _ = builder.try_init();
-    }
 
     #[test]
     fn test_parse_quote() {
-        init();
         let raw_quote = include_bytes!("../data/quote.dat");
         let (_quote, _ecdsa_sig_data, _auth_data, _certification_data) =
             parse_quote(raw_quote).unwrap();
