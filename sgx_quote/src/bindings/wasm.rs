@@ -5,6 +5,12 @@ use wasm_bindgen::prelude::*;
 use crate::quote::parse_quote;
 
 #[cfg(feature = "wasm")]
+use asn1_rs::{oid, Oid};
+
+#[cfg(feature = "wasm")]
+pub const SGX_EXTENSIONS_OID: Oid<'static> = oid!(1.2.840 .113741 .1337 .6);
+
+#[cfg(feature = "wasm")]
 #[wasm_bindgen(inspectable, getter_with_clone)]
 #[derive(Clone)]
 pub struct QuoteHeader {
@@ -86,5 +92,23 @@ impl Quote {
                 report_data: quote.report_body.report_data.to_vec(),
             },
         })
+    }
+
+    pub fn from_pem_certificate(pem_certificate: &[u8]) -> Result<Quote, JsValue> {
+        match x509_parser::pem::parse_x509_pem(pem_certificate) {
+            Ok((rem, pem)) if !rem.is_empty() || pem.label.as_str() != "CERTIFICATE" => {
+                Err(JsValue::from_str("PEM parsing error"))
+            }
+            Ok((_, pem)) => match x509_parser::parse_x509_certificate(&pem.contents) {
+                Ok((rem, _)) if !rem.is_empty() => Err(JsValue::from_str("X.509 parsing error")),
+                Ok((_, x509)) => match x509.get_extension_unique(&SGX_EXTENSIONS_OID) {
+                    Ok(Some(sgx_extension)) => Quote::new(sgx_extension.value),
+                    Ok(None) => Err(JsValue::from_str("SGX extension not found")),
+                    Err(_) => Err(JsValue::from_str("SGX extension parsing error")),
+                },
+                Err(_) => Err(JsValue::from_str("X.509 parsing error")),
+            },
+            Err(_) => Err(JsValue::from_str("PEM parsing error")),
+        }
     }
 }
