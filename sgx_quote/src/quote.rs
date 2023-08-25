@@ -1,11 +1,16 @@
 use anyhow::{anyhow, Result};
 use core::fmt;
+use log::debug;
 use scroll::Pread;
+use std::{fs, io::Read};
 
 pub const QUOTE_HEADER_SIZE: usize = 48;
 pub const QUOTE_REPORT_BODY_SIZE: usize = 384;
 pub const QUOTE_BODY_SIZE: usize = QUOTE_HEADER_SIZE + QUOTE_REPORT_BODY_SIZE;
 pub const QUOTE_ECDSA_SIG_DATA_SIZE: usize = 576;
+
+const REPORT_DATA_SIZE: usize = 64;
+const QUOTE_MAX_SIZE: usize = 8192;
 
 /// Header of Quote data structure (48 bytes).
 /// See [sgx_quote_3.h#L165](https://github.com/intel/SGXDataCenterAttestationPrimitives/blob/DCAP_1.16/QuoteGeneration/quote_wrapper/common/inc/sgx_quote_3.h#L165).
@@ -175,6 +180,32 @@ pub struct EcdsaSigData {
     pub qe_report_signature: [u8; 64],
 }
 
+pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>> {
+    if user_report_data.len() > REPORT_DATA_SIZE {
+        return Err(anyhow!("user_report_data must be at most 64 bytes"));
+    }
+
+    debug!("Reading attestation_type...");
+    let mut file = fs::File::open("/dev/attestation/attestation_type")?;
+    let mut buf = [0; 32];
+    let n = file.read(&mut buf[..])?;
+    let s = String::from_utf8_lossy(&buf[..n]);
+
+    if s.trim() != "dcap" {
+        return Err(anyhow!("Only DCAP supported, found '{s}'"));
+    }
+
+    debug!("Writting user_report_data...");
+    fs::write("/dev/attestation/user_report_data", user_report_data)?;
+
+    debug!("Reading quote...");
+    let mut file = fs::File::open("/dev/attestation/quote")?;
+    let mut buf = [0; QUOTE_MAX_SIZE];
+    let size = file.read(&mut buf[..])?;
+
+    Ok(buf[..size].to_vec())
+}
+
 pub fn parse_quote_header(raw_quote: &[u8]) -> Result<QuoteHeader> {
     raw_quote
         .pread_with::<QuoteHeader>(0, scroll::LE)
@@ -216,7 +247,7 @@ pub fn parse_auth_and_cert(raw_quote: &[u8]) -> Result<(AuthData, CertificationD
     let certification_data_type = raw_quote
         .gread_with::<u16>(offset, scroll::LE)
         .map_err(|e| anyhow!("Parse certification data type failed: {:?}", e))?;
-    println!("certification_data_type: {}", certification_data_type);
+    debug!("certification_data_type: {}", certification_data_type);
 
     let certification_data_len = raw_quote
         .gread_with::<u32>(offset, scroll::LE)
