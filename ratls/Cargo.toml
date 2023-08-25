@@ -1,11 +1,18 @@
 [package]
-name = "sgx_ratls"
+name = "ratls"
 version = "0.1.0"
 edition = "2021"
 license = "MIT/Apache-2.0"
 description = "Intel SGX verification of Remote Attestation based TLS certificate"
 
+[[bin]]
+name = "ratls-certtool"
+path = "src/main.rs"
+
 [dependencies]
+anyhow = "1.0"
+openssl = { version = "0.10", features = ["vendored"] }
+sgx_quote = { path = "../sgx_quote" }
 rustls = { version = "0.21", features = ["dangerous_configuration"] }
 
 [dev-dependencies]
