@@ -5,12 +5,11 @@ use openssl::{
     bn::{BigNum, MsbOption},
     ec::{EcGroup, EcKey},
     nid::Nid,
-    pkcs12::Pkcs12,
-    pkey::{PKey, Public},
+    pkey::{PKey, Private, Public},
     sha::Sha256,
     x509::{
         extension::{BasicConstraints, SubjectAlternativeName},
-        X509Builder, X509Extension,
+        X509Builder, X509Extension, X509,
     },
 };
 use rustls::{
@@ -32,7 +31,7 @@ const RATLS_EXTENSION_OOID: &str = "1.2.840.113741.1337.6";
 /// and some 32 arbitrary extra bytes.
 pub fn get_ratls_extension(
     ssl_public_key: &[u8],
-    extra_data: Option<&[u8; 32]>,
+    extra_data: Option<[u8; 32]>,
 ) -> Result<X509Extension> {
     // Hash the public key of the certificate
     let mut pubkey_hash = Sha256::new();
@@ -42,7 +41,7 @@ pub fn get_ratls_extension(
     // Create the report data
     let user_report_data = extra_data.map_or_else(
         || pubkey_hash.to_vec(),
-        |extra_data| [pubkey_hash, *extra_data].concat(),
+        |extra_data| [pubkey_hash, extra_data].concat(),
     );
 
     // Generate the quote
@@ -61,15 +60,15 @@ pub fn get_ratls_extension(
 /// The RATLS certificate contains the sgx quote
 #[allow(clippy::too_many_arguments)]
 pub fn generate_ratls_cert(
-    country: &str,
-    state: &str,
-    city: &str,
-    organization: &str,
-    common_name: &str,
+    country: Option<&str>,
+    state: Option<&str>,
+    city: Option<&str>,
+    organization: Option<&str>,
+    common_name: Option<&str>,
     subject_alternative_names: Vec<&str>,
     days_before_expiration: u32,
-    pkcs12_password: &str,
-) -> Result<Pkcs12> {
+    quote_extra_data: Option<[u8; 32]>,
+) -> Result<(PKey<Private>, X509)> {
     let nid = Nid::X9_62_PRIME256V1; // NIST P-256 curve
     let group = EcGroup::from_curve_name(nid)?;
     let ec_key = EcKey::generate(&group)?;
@@ -88,11 +87,21 @@ pub fn generate_ratls_cert(
     let not_before = Asn1Time::days_from_now(0)?;
     let not_after = Asn1Time::days_from_now(days_before_expiration)?;
     let mut x509_name = openssl::x509::X509NameBuilder::new()?;
-    x509_name.append_entry_by_text("C", country)?;
-    x509_name.append_entry_by_text("ST", state)?;
-    x509_name.append_entry_by_text("L", city)?;
-    x509_name.append_entry_by_text("O", organization)?;
-    x509_name.append_entry_by_text("CN", common_name)?;
+    if let Some(country) = country {
+        x509_name.append_entry_by_text("C", country)?;
+    }
+    if let Some(state) = state {
+        x509_name.append_entry_by_text("ST", state)?;
+    }
+    if let Some(city) = city {
+        x509_name.append_entry_by_text("L", city)?;
+    }
+    if let Some(organization) = organization {
+        x509_name.append_entry_by_text("O", organization)?;
+    }
+    if let Some(common_name) = common_name {
+        x509_name.append_entry_by_text("CN", common_name)?;
+    }
     let x509_name = x509_name.build();
 
     let alternative_name = {
@@ -118,20 +127,17 @@ pub fn generate_ratls_cert(
     // Set the TLS extensions
     builder.append_extension(alternative_name.build(&builder.x509v3_context(None, None))?)?;
     builder.append_extension(BasicConstraints::new().ca().critical().build()?)?;
-    builder.append_extension(get_ratls_extension(&public_key.public_key_to_pem()?, None)?)?;
+    builder.append_extension(get_ratls_extension(
+        &public_key.public_key_to_pem()?,
+        quote_extra_data,
+    )?)?;
 
     builder.sign(&private_key, openssl::hash::MessageDigest::sha256())?;
 
     // now build the certificate
     let cert = builder.build();
 
-    // wrap it in a PKCS12 container
-    let pkcs12 = Pkcs12::builder()
-        .name(common_name)
-        .pkey(&private_key)
-        .cert(&cert)
-        .build2(pkcs12_password)?;
-    Ok(pkcs12)
+    Ok((private_key, cert))
 }
 
 pub struct NoVerifier;

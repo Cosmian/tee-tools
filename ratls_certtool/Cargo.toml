@@ -1,0 +1,15 @@
+[package]
+name = "ratls-certtool"
+version = "0.1.0"
+edition = "2021"
+license = "MIT/Apache-2.0"
+description = "Intel SGX verification of Remote Attestation based TLS certificate"
+
+[[bin]]
+name = "ratls-certtool"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.0", features = ["derive", "cargo", "string"] }
+ratls = { path = "../ratls" }
