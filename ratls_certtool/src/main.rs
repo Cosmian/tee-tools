@@ -6,6 +6,10 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+/// TODO: create a subcommand
+/// - to generate a cert
+/// - to verify a cert
+
 /// Generate a RATLS certificate
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

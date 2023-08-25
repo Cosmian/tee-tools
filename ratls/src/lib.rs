@@ -1,5 +1,5 @@
 use crate::error::RATLSError;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use openssl::{
     asn1::{Asn1Object, Asn1OctetString, Asn1Time},
     bn::{BigNum, MsbOption},
@@ -17,26 +17,70 @@ use rustls::{
     client::{ServerCertVerifier, ServerName},
     Certificate, Error,
 };
-use sgx_quote::quote::get_quote;
-use std::time::SystemTime;
+use sgx_quote::quote::{get_quote, parse_quote, verify_quote};
 use std::{io::Write, net::Ipv4Addr};
+use std::{str::FromStr, time::SystemTime};
+use x509_parser::{oid_registry::Oid, parse_x509_certificate, prelude::parse_x509_pem};
 
 pub mod error;
 
 const RATLS_EXTENSION_OOID: &str = "1.2.840.113741.1337.6";
+
+pub fn verify_ratls(
+    ratls_cert: &[u8],
+    mr_enclave: Option<[u8; 32]>,
+    mr_signer: Option<[u8; 32]>,
+) -> Result<()> {
+    // Get the quote from the certificate
+    let quote = extract_quote(ratls_cert)?;
+    let (quote, _, _, _) = parse_quote(&quote)?;
+
+    // Verify the first bytes of the report data
+    let expected_digest = digest_ratls_public_key(ratls_cert);
+
+    if quote.report_body.report_data[0..32] != expected_digest {
+        return Err(anyhow!(
+            "Failed to verify the RA-TLS public key fingerprint"
+        ));
+    }
+
+    // Verify the quote itself
+    verify_quote(&quote, mr_enclave, mr_signer)
+}
+
+/// Extract the quote from an RATLS certificate
+pub fn extract_quote(ratls_cert: &[u8]) -> Result<Vec<u8>> {
+    let (rem, pem) = parse_x509_pem(ratls_cert)?;
+    assert!(rem.is_empty());
+    assert_eq!(pem.label, String::from("CERTIFICATE"));
+    let (_, res_x509) = parse_x509_certificate(&pem.contents)?;
+
+    let quote =
+        match res_x509.get_extension_unique(&Oid::from_str(RATLS_EXTENSION_OOID).unwrap())? {
+            Some(ext) => ext.value,
+            None => return Err(anyhow!("This is not an RATLS certificate")),
+        };
+
+    Ok(quote.to_vec())
+}
+
+/// Compute the fingerprint of the ratls public key
+fn digest_ratls_public_key(ratls_public_key: &[u8]) -> [u8; 32] {
+    let mut pubkey_hash = Sha256::new();
+    pubkey_hash.update(ratls_public_key);
+    pubkey_hash.finish()
+}
 
 /// Generate the RATLS X509 extension containg the quote
 ///
 /// The quote report data contains the sha256 of the certificate public key
 /// and some 32 arbitrary extra bytes.
 pub fn get_ratls_extension(
-    ssl_public_key: &[u8],
+    ratls_public_key: &[u8],
     extra_data: Option<[u8; 32]>,
 ) -> Result<X509Extension> {
     // Hash the public key of the certificate
-    let mut pubkey_hash = Sha256::new();
-    pubkey_hash.update(ssl_public_key);
-    let pubkey_hash = pubkey_hash.finish();
+    let pubkey_hash = digest_ratls_public_key(ratls_public_key);
 
     // Create the report data
     let user_report_data = extra_data.map_or_else(

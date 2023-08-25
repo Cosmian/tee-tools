@@ -5,3 +5,6 @@ members = [
     "sgx_quote",
     "sgx_pck_extension"
 ]
+
+[workspace.dependencies]
+openssl = { version = "0.10", features = ["vendored"] }

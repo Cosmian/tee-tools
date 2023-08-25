@@ -206,6 +206,30 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>> {
     Ok(buf[..size].to_vec())
 }
 
+pub fn verify_quote(
+    quote: &Quote,
+    mr_enclave: Option<[u8; 32]>,
+    mr_signer: Option<[u8; 32]>,
+) -> Result<()> {
+    // Check the mr enclave
+    if let Some(mr_enclave) = mr_enclave {
+        if quote.report_body.mr_enclave != mr_enclave {
+            return Err(anyhow!("MRENCLAVE miss-matches expected value"));
+        }
+    }
+
+    // Check the mr signer
+    if let Some(mr_signer) = mr_signer {
+        if quote.report_body.mr_signer != mr_signer {
+            return Err(anyhow!("MRSIGNER miss-matches expected value"));
+        }
+    }
+
+    // Check the collaterals
+    // TODO
+    Ok(())
+}
+
 pub fn parse_quote_header(raw_quote: &[u8]) -> Result<QuoteHeader> {
     raw_quote
         .pread_with::<QuoteHeader>(0, scroll::LE)

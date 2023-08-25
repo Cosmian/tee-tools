@@ -7,10 +7,10 @@ description = "Intel SGX verification of Remote Attestation based TLS certificat
 
 [dependencies]
 anyhow = "1.0"
-openssl = { version = "0.10", features = ["vendored"] }
+openssl = { workspace = true }
 sgx_quote = { path = "../sgx_quote" }
 rustls = { version = "0.21", features = ["dangerous_configuration"] }
+x509-parser = "0.15"
 
 [dev-dependencies]
 base64 = "0.21"
-x509-parser = "0.15"
