@@ -1,4 +1,4 @@
-FROM ghcr.io/cosmian/intel-sgx:2.18.1
+FROM ghcr.io/cosmian/intel-sgx:2.21
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
