@@ -1,4 +1,5 @@
-use anyhow::{anyhow, Result};
+use crate::error::Error;
+
 use core::fmt;
 use log::debug;
 use scroll::Pread;
@@ -181,9 +182,11 @@ pub struct EcdsaSigData {
 }
 
 /// Get the quote of the SGX enclave
-pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>> {
+pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>, Error> {
     if user_report_data.len() > REPORT_DATA_SIZE {
-        return Err(anyhow!("user_report_data must be at most 64 bytes"));
+        return Err(Error::InvalidFormat(
+            "user_report_data must be at most 64 bytes".to_owned(),
+        ));
     }
 
     debug!("Reading attestation_type...");
@@ -193,7 +196,9 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>> {
     let s = String::from_utf8_lossy(&buf[..n]);
 
     if s.trim() != "dcap" {
-        return Err(anyhow!("Only DCAP supported, found '{s}'"));
+        return Err(Error::Unimplemented(format!(
+            "Only DCAP supported, found '{s}'"
+        )));
     }
 
     debug!("Writting user_report_data...");
@@ -217,18 +222,22 @@ pub fn verify_quote(
     quote: &Quote,
     mr_enclave: Option<[u8; 32]>,
     mr_signer: Option<[u8; 32]>,
-) -> Result<()> {
+) -> Result<(), Error> {
     // Check the mr enclave
     if let Some(mr_enclave) = mr_enclave {
         if quote.report_body.mr_enclave != mr_enclave {
-            return Err(anyhow!("MRENCLAVE miss-matches expected value"));
+            return Err(Error::VerificationFailure(
+                "MRENCLAVE miss-matches expected value".to_owned(),
+            ));
         }
     }
 
     // Check the mr signer
     if let Some(mr_signer) = mr_signer {
         if quote.report_body.mr_signer != mr_signer {
-            return Err(anyhow!("MRSIGNER miss-matches expected value"));
+            return Err(Error::VerificationFailure(
+                "MRSIGNER miss-matches expected value".to_owned(),
+            ));
         }
     }
 
@@ -237,37 +246,37 @@ pub fn verify_quote(
     Ok(())
 }
 
-pub fn parse_quote_header(raw_quote: &[u8]) -> Result<QuoteHeader> {
+pub fn parse_quote_header(raw_quote: &[u8]) -> Result<QuoteHeader, Error> {
     raw_quote
         .pread_with::<QuoteHeader>(0, scroll::LE)
-        .map_err(|e| anyhow!("Parse quote header failed: {:?}", e))
+        .map_err(|e| Error::InvalidFormat(format!("Parse quote header failed: {e:?}")))
 }
 
-pub fn parse_report_body(raw_quote: &[u8]) -> Result<ReportBody> {
+pub fn parse_report_body(raw_quote: &[u8]) -> Result<ReportBody, Error> {
     raw_quote
         .pread_with::<ReportBody>(QUOTE_HEADER_SIZE, scroll::LE)
-        .map_err(|e| anyhow!("Parse report body failed: {:?}", e))
+        .map_err(|e| Error::InvalidFormat(format!("Parse report body failed: {e:?}")))
 }
 
-pub fn parse_quote_body(raw_quote: &[u8]) -> Result<Quote> {
+pub fn parse_quote_body(raw_quote: &[u8]) -> Result<Quote, Error> {
     Ok(Quote {
         header: parse_quote_header(raw_quote)?,
         report_body: parse_report_body(raw_quote)?,
     })
 }
 
-pub fn parse_ecdsa_sig_data(raw_quote: &[u8]) -> Result<EcdsaSigData> {
+pub fn parse_ecdsa_sig_data(raw_quote: &[u8]) -> Result<EcdsaSigData, Error> {
     raw_quote
         // shift 4 bytes for the signature_data_len (u32)
         .pread_with::<EcdsaSigData>(QUOTE_BODY_SIZE + 4, scroll::LE)
-        .map_err(|e| anyhow!("Parse auth data failed: {:?}", e))
+        .map_err(|e| Error::InvalidFormat(format!("Parse auth data failed: {e:?}")))
 }
 
-pub fn parse_auth_and_cert(raw_quote: &[u8]) -> Result<(AuthData, CertificationData)> {
+pub fn parse_auth_and_cert(raw_quote: &[u8]) -> Result<(AuthData, CertificationData), Error> {
     let offset = &mut (QUOTE_BODY_SIZE + 4 + QUOTE_ECDSA_SIG_DATA_SIZE);
     let qe_auth_data_len = raw_quote
         .gread_with::<u16>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse QE auth data length failed: {:?}", e))?;
+        .map_err(|e| Error::InvalidFormat(format!("Parse QE auth data length failed: {e:?}")))?;
     let mut qe_auth_data: Vec<u8> = vec![0; qe_auth_data_len as usize];
     raw_quote.gread_inout(offset, &mut qe_auth_data)?;
     assert!(
@@ -277,12 +286,16 @@ pub fn parse_auth_and_cert(raw_quote: &[u8]) -> Result<(AuthData, CertificationD
 
     let certification_data_type = raw_quote
         .gread_with::<u16>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse certification data type failed: {:?}", e))?;
+        .map_err(|e| {
+            Error::InvalidFormat(format!("Parse certification data type failed: {e:?}"))
+        })?;
     debug!("certification_data_type: {}", certification_data_type);
 
     let certification_data_len = raw_quote
         .gread_with::<u32>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse certification data length failed: {:?}", e))?;
+        .map_err(|e| {
+            Error::InvalidFormat(format!("Parse certification data length failed: {e:?}"))
+        })?;
     let mut certification_data: Vec<u8> = vec![0; certification_data_len as usize];
     raw_quote.gread_inout(offset, &mut certification_data)?;
     assert!(
@@ -301,27 +314,29 @@ pub fn parse_auth_and_cert(raw_quote: &[u8]) -> Result<(AuthData, CertificationD
     ))
 }
 
-pub fn parse_quote(raw_quote: &[u8]) -> Result<(Quote, EcdsaSigData, AuthData, CertificationData)> {
+pub fn parse_quote(
+    raw_quote: &[u8],
+) -> Result<(Quote, EcdsaSigData, AuthData, CertificationData), Error> {
     let offset = &mut 0usize;
 
     let header = raw_quote
         .gread_with::<QuoteHeader>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse quote header failed: {:?}", e))?;
+        .map_err(|e| Error::InvalidFormat(format!("Parse quote header failed: {e:?}")))?;
     let report_body = raw_quote
         .gread_with::<ReportBody>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse report body failed: {:?}", e))?;
+        .map_err(|e| Error::InvalidFormat(format!("Parse report body failed: {e:?}")))?;
 
     let signature_data_len = raw_quote
         .gread_with::<u32>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse signature data length failed: {:?}", e))?;
+        .map_err(|e| Error::InvalidFormat(format!("Parse signature data length failed: {e:?}")))?;
 
     let ecdsa_sig_data = raw_quote
         .gread_with::<EcdsaSigData>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse ecdsa sig data failed: {:?}", e))?;
+        .map_err(|e| Error::InvalidFormat(format!("Parse ecdsa sig data failed: {e:?}")))?;
 
     let qe_auth_data_len = raw_quote
         .gread_with::<u16>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse QE auth data length failed: {:?}", e))?;
+        .map_err(|e| Error::InvalidFormat(format!("Parse QE auth data length failed: {e:?}")))?;
     let mut qe_auth_data: Vec<u8> = vec![0; qe_auth_data_len as usize];
     raw_quote.gread_inout(offset, &mut qe_auth_data)?;
     assert!(
@@ -334,12 +349,16 @@ pub fn parse_quote(raw_quote: &[u8]) -> Result<(Quote, EcdsaSigData, AuthData, C
 
     let certification_data_type = raw_quote
         .gread_with::<u16>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse certification data type failed: {:?}", e))?;
+        .map_err(|e| {
+            Error::InvalidFormat(format!("Parse certification data type failed: {e:?}"))
+        })?;
     debug!("certification_data_type: {}", certification_data_type);
 
     let certification_data_len = raw_quote
         .gread_with::<u32>(offset, scroll::LE)
-        .map_err(|e| anyhow!("Parse certification data length failed: {:?}", e))?;
+        .map_err(|e| {
+            Error::InvalidFormat(format!("Parse certification data length failed: {e:?}"))
+        })?;
     let mut certification_data: Vec<u8> = vec![0; certification_data_len as usize];
     raw_quote.gread_inout(offset, &mut certification_data)?;
     assert!(

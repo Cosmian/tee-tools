@@ -17,7 +17,7 @@ $ cargo build
 ## Usage
 ```console
 # Require an SGX enclave to run:
-$ ./target/debug/ratls_certtool generate --help
+$ ratls_certtool generate --help
 # On any hosts:
-$ ./target/debug/ratls_certtool verify --help
+$ ratls_certtool verify --help
 ```

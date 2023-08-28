@@ -1,5 +1,4 @@
-use crate::error::RATLSError;
-use anyhow::{anyhow, Result};
+use crate::error::Error;
 use openssl::{
     asn1::{Asn1Object, Asn1OctetString, Asn1Time},
     bn::{BigNum, MsbOption},
@@ -15,7 +14,7 @@ use openssl::{
 use rustls::{
     client::ServerCertVerified,
     client::{ServerCertVerifier, ServerName},
-    Certificate, Error,
+    Certificate, Error as RustTLSError,
 };
 use sgx_quote::quote::{get_quote, parse_quote, verify_quote};
 use std::{io::Write, net::Ipv4Addr};
@@ -41,15 +40,18 @@ pub fn verify_ratls(
     pem_ratls_cert: &[u8],
     mr_enclave: Option<[u8; 32]>,
     mr_signer: Option<[u8; 32]>,
-) -> Result<()> {
+) -> Result<(), Error> {
     let (rem, pem) = parse_x509_pem(pem_ratls_cert)?;
 
     if !rem.is_empty() || pem.label != *"CERTIFICATE" {
-        return Err(anyhow!("Not a certificate or certificate is malformed"));
+        return Err(Error::InvalidFormat(
+            "Not a certificate or certificate is malformed".to_owned(),
+        ));
     }
 
     let content = pem.contents.to_owned();
-    let (_, ratls_cert) = parse_x509_certificate(content.as_ref())?;
+    let (_, ratls_cert) =
+        parse_x509_certificate(content.as_ref()).map_err(|e| Error::X509ParserError(e.into()))?;
 
     // Get the quote from the certificate
     let quote = extract_quote(&ratls_cert)?;
@@ -62,21 +64,25 @@ pub fn verify_ratls(
     let expected_digest = digest_ratls_public_key(public_key);
 
     if quote.report_body.report_data[0..32] != expected_digest {
-        return Err(anyhow!(
-            "Failed to verify the RA-TLS public key fingerprint"
+        return Err(Error::VerificationFailure(
+            "Failed to verify the RA-TLS public key fingerprint".to_owned(),
         ));
     }
 
     // Verify the quote itself
-    verify_quote(&quote, mr_enclave, mr_signer)
+    Ok(verify_quote(&quote, mr_enclave, mr_signer)?)
 }
 
 /// Extract the quote from an RATLS certificate
-pub fn extract_quote(ratls_cert: &X509Certificate) -> Result<Vec<u8>> {
+pub fn extract_quote(ratls_cert: &X509Certificate) -> Result<Vec<u8>, Error> {
     let quote =
         match ratls_cert.get_extension_unique(&Oid::from_str(RATLS_EXTENSION_OOID).unwrap())? {
             Some(ext) => ext.value,
-            None => return Err(anyhow!("This is not an RATLS certificate")),
+            None => {
+                return Err(Error::InvalidFormat(
+                    "This is not an RATLS certificate".to_owned(),
+                ))
+            }
         };
 
     Ok(quote.to_vec())
@@ -96,7 +102,7 @@ fn digest_ratls_public_key(ratls_public_key: &[u8]) -> [u8; 32] {
 pub fn get_ratls_extension(
     ratls_public_key: &[u8],
     extra_data: Option<[u8; 32]>,
-) -> Result<X509Extension> {
+) -> Result<X509Extension, Error> {
     // Hash the public key of the certificate
     let pubkey_hash = digest_ratls_public_key(ratls_public_key);
 
@@ -130,7 +136,7 @@ pub fn generate_ratls_cert(
     subject_alternative_names: Vec<&str>,
     days_before_expiration: u32,
     quote_extra_data: Option<[u8; 32]>,
-) -> Result<(PKey<Private>, X509)> {
+) -> Result<(PKey<Private>, X509), Error> {
     let nid = Nid::X9_62_PRIME256V1; // NIST P-256 curve
     let group = EcGroup::from_curve_name(nid)?;
     let ec_key = EcKey::generate(&group)?;
@@ -210,17 +216,17 @@ impl ServerCertVerifier for NoVerifier {
         _: &mut dyn Iterator<Item = &[u8]>, // scts
         _: &[u8],                           // ocsp_response
         _: SystemTime,                      // now
-    ) -> Result<ServerCertVerified, Error> {
+    ) -> Result<ServerCertVerified, RustTLSError> {
         Ok(ServerCertVerified::assertion())
     }
 }
 
 /// Get the RATLS certificate from a `domain`:`port`
-pub fn get_server_certificate(domain: &str, port: u32) -> Result<Vec<u8>, RATLSError> {
+pub fn get_server_certificate(domain: &str, port: u32) -> Result<Vec<u8>, Error> {
     let root_store = rustls::RootCertStore::empty();
 
     let mut socket = std::net::TcpStream::connect(format!("{domain}:{port}"))
-        .map_err(|_| RATLSError::ConnectionError)?;
+        .map_err(|_| Error::ConnectionError)?;
 
     let mut config = rustls::ClientConfig::builder()
         .with_safe_defaults()
@@ -231,9 +237,9 @@ pub fn get_server_certificate(domain: &str, port: u32) -> Result<Vec<u8>, RATLSE
         .set_certificate_verifier(std::sync::Arc::new(NoVerifier));
 
     let rc_config = std::sync::Arc::new(config);
-    let dns_name = domain.try_into().map_err(|_| RATLSError::DNSNameError)?;
-    let mut client = rustls::ClientConnection::new(rc_config, dns_name)
-        .map_err(|_| RATLSError::ConnectionError)?;
+    let dns_name = domain.try_into().map_err(|_| Error::DNSNameError)?;
+    let mut client =
+        rustls::ClientConnection::new(rc_config, dns_name).map_err(|_| Error::ConnectionError)?;
     let mut stream = rustls::Stream::new(&mut client, &mut socket);
     stream
         .write_all(b"GET / HTTP/1.1\r\nConnection: close\r\n\r\n")
@@ -241,11 +247,11 @@ pub fn get_server_certificate(domain: &str, port: u32) -> Result<Vec<u8>, RATLSE
 
     let certificates = client
         .peer_certificates()
-        .ok_or(RATLSError::ServerCertificateError)?;
+        .ok_or(Error::ServerCertificateError)?;
 
     Ok(certificates
         .get(0)
-        .ok_or(RATLSError::ServerCertificateError)?
+        .ok_or(Error::ServerCertificateError)?
         .as_ref()
         .to_vec())
 }

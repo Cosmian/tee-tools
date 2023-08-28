@@ -66,7 +66,7 @@ impl GenerateArgs {
                     extra_data.len()
                 ));
             }
-            let extra_data_padding = vec![0; 32];
+            let extra_data_padding = vec![0; 32 - extra_data.len()];
             let extra_data = [extra_data, extra_data_padding].concat();
             Some(extra_data[0..32].try_into()?)
         } else {

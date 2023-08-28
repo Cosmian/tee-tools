@@ -7,4 +7,8 @@ members = [
 ]
 
 [workspace.dependencies]
+hex = "0.4"
+log = "0.4"
 openssl = { version = "0.10", features = ["vendored"] }
+thiserror = "1.0"
+x509-parser = "0.15"

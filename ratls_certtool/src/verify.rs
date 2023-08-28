@@ -39,6 +39,8 @@ impl VerifyArgs {
             Some(mr_signer),
         )?;
 
+        println!("Verification succeed!");
+
         Ok(())
     }
 }

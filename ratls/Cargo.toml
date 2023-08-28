@@ -6,11 +6,11 @@ license = "MIT/Apache-2.0"
 description = "Intel SGX verification of Remote Attestation based TLS certificate"
 
 [dependencies]
-anyhow = "1.0"
 openssl = { workspace = true }
 sgx_quote = { path = "../sgx_quote" }
 rustls = { version = "0.21", features = ["dangerous_configuration"] }
-x509-parser = "0.15"
+thiserror = { workspace = true }
+x509-parser = { workspace = true }
 
 [dev-dependencies]
 base64 = "0.21"

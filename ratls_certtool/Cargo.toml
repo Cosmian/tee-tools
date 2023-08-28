@@ -11,8 +11,8 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
-clap = { version = "4", default-features = false,features = ["std","derive", "cargo", "string",  "help", "usage", "error-context"] }
-hex = "0.4"
+clap = { version = "4", default-features = false, features = ["cargo", "derive", "std", "string"] }
+hex = { workspace = true }
 ratls = { path = "../ratls" }
 sgx_quote = { path = "../sgx_quote" }
-x509-parser = "0.15"
+x509-parser = { workspace = true }
