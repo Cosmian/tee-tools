@@ -328,7 +328,7 @@ pub fn parse_quote(raw_quote: &[u8]) -> Result<(Quote, EcdsaSigData, AuthData, C
     let certification_data_type = raw_quote
         .gread_with::<u16>(offset, scroll::LE)
         .map_err(|e| anyhow!("Parse certification data type failed: {:?}", e))?;
-    println!("certification_data_type: {}", certification_data_type);
+    debug!("certification_data_type: {}", certification_data_type);
 
     let certification_data_len = raw_quote
         .gread_with::<u32>(offset, scroll::LE)

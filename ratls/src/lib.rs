@@ -20,23 +20,35 @@ use rustls::{
 use sgx_quote::quote::{get_quote, parse_quote, verify_quote};
 use std::{io::Write, net::Ipv4Addr};
 use std::{str::FromStr, time::SystemTime};
-use x509_parser::{oid_registry::Oid, parse_x509_certificate, prelude::parse_x509_pem};
+use x509_parser::{
+    oid_registry::Oid,
+    parse_x509_certificate,
+    prelude::{parse_x509_pem, X509Certificate},
+};
 
 pub mod error;
 
 const RATLS_EXTENSION_OOID: &str = "1.2.840.113741.1337.6";
 
 pub fn verify_ratls(
-    ratls_cert: &[u8],
+    pem_ratls_cert: &[u8],
     mr_enclave: Option<[u8; 32]>,
     mr_signer: Option<[u8; 32]>,
 ) -> Result<()> {
+    let (rem, pem) = parse_x509_pem(pem_ratls_cert)?;
+    assert!(rem.is_empty());
+    assert_eq!(pem.label, String::from("CERTIFICATE"));
+
+    let content = pem.contents.to_owned();
+    let (_, ratls_cert) = parse_x509_certificate(content.as_ref())?;
+
     // Get the quote from the certificate
-    let quote = extract_quote(ratls_cert)?;
+    let quote = extract_quote(&ratls_cert)?;
     let (quote, _, _, _) = parse_quote(&quote)?;
 
     // Verify the first bytes of the report data
-    let expected_digest = digest_ratls_public_key(ratls_cert);
+    let public_key = ratls_cert.public_key().raw;
+    let expected_digest = digest_ratls_public_key(public_key);
 
     if quote.report_body.report_data[0..32] != expected_digest {
         return Err(anyhow!(
@@ -49,14 +61,9 @@ pub fn verify_ratls(
 }
 
 /// Extract the quote from an RATLS certificate
-pub fn extract_quote(ratls_cert: &[u8]) -> Result<Vec<u8>> {
-    let (rem, pem) = parse_x509_pem(ratls_cert)?;
-    assert!(rem.is_empty());
-    assert_eq!(pem.label, String::from("CERTIFICATE"));
-    let (_, res_x509) = parse_x509_certificate(&pem.contents)?;
-
+pub fn extract_quote(ratls_cert: &X509Certificate) -> Result<Vec<u8>> {
     let quote =
-        match res_x509.get_extension_unique(&Oid::from_str(RATLS_EXTENSION_OOID).unwrap())? {
+        match ratls_cert.get_extension_unique(&Oid::from_str(RATLS_EXTENSION_OOID).unwrap())? {
             Some(ext) => ext.value,
             None => return Err(anyhow!("This is not an RATLS certificate")),
         };
@@ -171,10 +178,7 @@ pub fn generate_ratls_cert(
     // Set the TLS extensions
     builder.append_extension(alternative_name.build(&builder.x509v3_context(None, None))?)?;
     builder.append_extension(BasicConstraints::new().ca().critical().build()?)?;
-    builder.append_extension(get_ratls_extension(
-        &public_key.public_key_to_pem()?,
-        quote_extra_data,
-    )?)?;
+    builder.append_extension(get_ratls_extension(&public_ec_key, quote_extra_data)?)?;
 
     builder.sign(&private_key, openssl::hash::MessageDigest::sha256())?;
 

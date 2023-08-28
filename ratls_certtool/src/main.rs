@@ -1,139 +1,33 @@
-use anyhow::{anyhow, Result};
-use ratls::generate_ratls_cert;
-use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
+use anyhow::Result;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
-/// TODO: create a subcommand
-/// - to generate a cert
-/// - to verify a cert
+pub mod generate;
+pub mod verify;
 
-/// Generate a RATLS certificate
-#[derive(Parser, Debug)]
+use generate::GenerateArgs;
+use verify::VerifyArgs;
+
+#[derive(Parser)]
 #[command(author, version, about, long_about = None)]
-struct Args {
-    /// Subject as an RFC 4514 string for the RA-TLS certificate
-    #[arg(
-        short,
-        long,
-        default_value_t = String::from("CN=cosmian.io,O=Cosmian Tech,C=FR,L=Paris,ST=Ile-de-France")
-    )]
-    subject: String,
-
-    /// Subject Alternative Name in the RA-TLS certificate
-    #[arg(long, default_value_t = String::from("localhost"))]
-    san: String,
-
-    /// Number of days before the certificate expires
-    #[arg(short, long, default_value_t = 365)]
-    days: u32,
-
-    /// A file containing 32 bytes to add into the quote report data section
-    #[arg(short, long)]
-    extra_data: Option<PathBuf>,
-
-    /// Path of the generated certificate
-    #[arg(short, long, default_value = PathBuf::from(".").into_os_string())]
-    output: PathBuf,
+struct Cli {
+    #[command(subcommand)]
+    command: CliCommands,
 }
 
-/// Parse a rfc4514 string.
-///
-/// Example: CN=cosmian.io,O=Cosmian Tech,C=FR,L=Paris,ST=Ile-de-France"
-fn parse_rfc4514_string(s: &str) -> Result<HashMap<String, String>> {
-    let fields = s.split(',');
-    let mut key_values = HashMap::new();
-    for field in fields.into_iter() {
-        let key_value: Vec<&str> = field.split('=').collect();
-        if key_value.len() != 2 {
-            return Err(anyhow!("'{s}' is malformed!"));
-        }
-        if key_value[0].is_empty() || key_value[1].is_empty() {
-            return Err(anyhow!("'{s}' is malformed!"));
-        }
-
-        key_values.insert(
-            key_value[0].trim().to_owned(),
-            key_value[1].trim().to_owned(),
-        );
-    }
-    Ok(key_values)
+#[derive(Subcommand)]
+enum CliCommands {
+    Generate(GenerateArgs),
+    Verify(VerifyArgs),
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let opts = Cli::parse();
 
-    let extra_data: Option<[u8; 32]> = if let Some(extra_data_file) = args.extra_data {
-        let extra_data = fs::read(extra_data_file)?;
-        if extra_data.len() > 32 {
-            return Err(anyhow!(
-                "Your extra data file should contain at most 32 bytes (read: {}B)",
-                extra_data.len()
-            ));
-        }
-        let extra_data_padding = vec![0; 32];
-        let extra_data = [extra_data, extra_data_padding].concat();
-        Some(extra_data[0..32].try_into()?)
-    } else {
-        None
-    };
-
-    let subject = parse_rfc4514_string(&args.subject)?;
-
-    let (private_key, cert_key) = generate_ratls_cert(
-        subject.get("C").map(|x| x.as_str()),
-        subject.get("ST").map(|x| x.as_str()),
-        subject.get("L").map(|x| x.as_str()),
-        subject.get("O").map(|x| x.as_str()),
-        subject.get("CN").map(|x| x.as_str()),
-        vec![&args.san],
-        args.days,
-        extra_data,
-    )?;
-
-    let key_path = args.output.join(PathBuf::from("key.ratls.pem"));
-    let cert_path = args.output.join(PathBuf::from("cert.ratls.pem"));
-
-    fs::create_dir_all(&args.output)?;
-    fs::write(&key_path, private_key.private_key_to_pem_pkcs8()?)?;
-    fs::write(&cert_path, cert_key.to_pem()?)?;
-
-    println!("RATLS private key: {key_path:?}");
-    println!("RATLS certificate: {cert_path:?}");
+    match opts.command {
+        CliCommands::Generate(args) => args.run(),
+        CliCommands::Verify(args) => args.run(),
+    }?;
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_rfc4514_string() {
-        assert!(parse_rfc4514_string("CN=cosmian.io").is_ok()); // One key_value
-        assert!(parse_rfc4514_string("CN=cosmian.io,T=3").is_ok()); // More than one key_values
-        assert!(parse_rfc4514_string("CN=cosmian.io,CN=cosmian.io").is_ok()); // Twice the same key_value
-        assert!(parse_rfc4514_string("test").is_err()); // Not a key_value
-        assert!(parse_rfc4514_string("").is_err()); // Empty string
-        assert!(parse_rfc4514_string("CN=cosmian.io=3").is_err()); // Missing comma and key
-        assert!(parse_rfc4514_string("CN=cosmian.io,=3").is_err()); // Missing key
-        assert!(parse_rfc4514_string("CN=cosmian.io,A=").is_err()); // Missing value
-
-        // Check the parsing
-        let subject =
-            parse_rfc4514_string("CN=cosmian.io,O=Cosmian Tech,C=FR,L=Paris,ST=Ile-de-France")
-                .unwrap();
-        assert_eq!(subject["CN"], String::from("cosmian.io"));
-        assert_eq!(subject["O"], String::from("Cosmian Tech"));
-        assert_eq!(subject["C"], String::from("FR"));
-        assert_eq!(subject["L"], String::from("Paris"));
-        assert_eq!(subject["ST"], String::from("Ile-de-France"));
-
-        // Check the trim
-        let subject = parse_rfc4514_string(" CN = cosmian.io , O = Cosmian Tech ").unwrap();
-        assert_eq!(subject["CN"], String::from("cosmian.io"));
-        assert_eq!(subject["O"], String::from("Cosmian Tech"));
-    }
 }

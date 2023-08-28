@@ -1,9 +1,10 @@
 use anyhow::Result;
+use openssl::rsa::Rsa;
 use openssl::sha::Sha256;
 
 /// Compute the `MR_SIGNER` from the public enclave certificate (PEM format)
 pub fn compute_mr_signer(public_enclave_cert: &str) -> Result<[u8; 32]> {
-    let public_key = openssl::rsa::Rsa::public_key_from_pem(public_enclave_cert.as_bytes())?;
+    let public_key = Rsa::public_key_from_pem(public_enclave_cert.as_bytes())?;
 
     let modulus = public_key.n();
     let mut modulus_bytes = modulus.to_vec();
