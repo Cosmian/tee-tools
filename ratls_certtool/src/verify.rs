@@ -6,11 +6,11 @@ use sgx_quote::mrsigner::compute_mr_signer;
 use std::fs;
 use std::path::PathBuf;
 
-/// Generate a RATLS certificate
+/// Verify a RATLS certificate
 #[derive(Args, Debug)]
 #[clap(verbatim_doc_comment)]
 pub struct VerifyArgs {
-    /// Path of the generated certificate
+    /// Path of the certificate to verify
     #[arg(short, long)]
     cert: PathBuf,
 
@@ -18,7 +18,7 @@ pub struct VerifyArgs {
     #[arg(short, long, required = false)]
     mrenclave: Option<String>,
 
-    /// Path of the enclave signer key
+    /// Path of the enclave signer key (to compute mrsigner)
     #[arg(short, long)]
     signer_key: PathBuf,
 }

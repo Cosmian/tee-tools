@@ -180,6 +180,7 @@ pub struct EcdsaSigData {
     pub qe_report_signature: [u8; 64],
 }
 
+/// Get the quote of the SGX enclave
 pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>> {
     if user_report_data.len() > REPORT_DATA_SIZE {
         return Err(anyhow!("user_report_data must be at most 64 bytes"));
@@ -206,6 +207,12 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>> {
     Ok(buf[..size].to_vec())
 }
 
+/// Verify the quote
+///
+/// The verification includes:
+/// - The MRenclave
+/// - The MRsigner
+/// - The quote collaterals
 pub fn verify_quote(
     quote: &Quote,
     mr_enclave: Option<[u8; 32]>,

@@ -30,14 +30,23 @@ pub mod error;
 
 const RATLS_EXTENSION_OOID: &str = "1.2.840.113741.1337.6";
 
+/// Verify the RATLS certificate.
+///
+/// The verification includes:
+/// - The MRenclave
+/// - The MRsigner
+/// - The report data content
+/// - The quote collaterals
 pub fn verify_ratls(
     pem_ratls_cert: &[u8],
     mr_enclave: Option<[u8; 32]>,
     mr_signer: Option<[u8; 32]>,
 ) -> Result<()> {
     let (rem, pem) = parse_x509_pem(pem_ratls_cert)?;
-    assert!(rem.is_empty());
-    assert_eq!(pem.label, String::from("CERTIFICATE"));
+
+    if !rem.is_empty() || pem.label != *"CERTIFICATE" {
+        return Err(anyhow!("Not a certificate or certificate is malformed"));
+    }
 
     let content = pem.contents.to_owned();
     let (_, ratls_cert) = parse_x509_certificate(content.as_ref())?;
@@ -47,6 +56,8 @@ pub fn verify_ratls(
     let (quote, _, _, _) = parse_quote(&quote)?;
 
     // Verify the first bytes of the report data
+    // It should be the fingerprint of the certificate
+    // public key (DER format)
     let public_key = ratls_cert.public_key().raw;
     let expected_digest = digest_ratls_public_key(public_key);
 
