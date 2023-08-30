@@ -2,6 +2,7 @@
 members = [
     "ratls",   
     "ratls_certtool",
+    "sev_quote",
     "sgx_quote",
     "sgx_pck_extension"
 ]
