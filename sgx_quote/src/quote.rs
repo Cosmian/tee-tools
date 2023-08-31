@@ -201,7 +201,7 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>, Error> {
         )));
     }
 
-    debug!("Writting user_report_data...");
+    debug!("Writing user_report_data...");
     fs::write("/dev/attestation/user_report_data", user_report_data)?;
 
     debug!("Reading quote...");

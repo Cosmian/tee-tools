@@ -20,14 +20,18 @@ pub struct VerifyArgs {
 
     /// Path of the enclave signer key (to compute mrsigner)
     #[arg(short, long)]
-    signer_key: PathBuf,
+    signer_key: Option<PathBuf>,
 }
 
 impl VerifyArgs {
-    pub fn run(&self) -> Result<()> {
-        let mr_signer = compute_mr_signer(&fs::read_to_string(self.signer_key.clone())?)?;
+    pub async fn run(&self) -> Result<()> {
+        let mr_signer = if let Some(path) = &self.signer_key {
+            Some(compute_mr_signer(&fs::read_to_string(path)?)?)
+        } else {
+            None
+        };
 
-        let mrenclave = if let Some(v) = self.mrenclave.clone() {
+        let mrenclave = if let Some(v) = &self.mrenclave {
             Some(decode(v)?.as_slice().try_into()?)
         } else {
             None
@@ -36,8 +40,9 @@ impl VerifyArgs {
         verify_ratls(
             fs::read_to_string(&self.cert)?.as_bytes(),
             mrenclave,
-            Some(mr_signer),
-        )?;
+            mr_signer,
+        )
+        .await?;
 
         println!("Verification succeed!");
 

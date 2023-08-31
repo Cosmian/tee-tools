@@ -16,6 +16,7 @@ use openssl::{
     x509::{CrlStatus, X509Crl, X509},
 };
 use reqwest::get;
+use serde::{Deserialize, Serialize};
 use sev::{
     certs::snp::Verifiable,
     firmware::{
@@ -47,30 +48,55 @@ const KDS_VLEK: &str = "/vlek/v1";
 const KDS_CERT_CHAIN: &str = "cert_chain";
 const KDS_CRL: &str = "crl";
 const SEV_PROD_NAME: &str = "Milan";
+const SEV_REPORT_DATA_SIZE: usize = 64;
 
-// TODO: check measurements or other quote fields??
-// TODO: read https://lib.rs/crates/sev-snp-utils
-// TODO: read other links : https://www.amd.com/en/developer/sev.html
+#[repr(C)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SEVQuote {
+    pub report: AttestationReport,
+    pub certs: Vec<CertTableEntry>,
+}
+
+impl From<(AttestationReport, Vec<CertTableEntry>)> for SEVQuote {
+    fn from(attr: (AttestationReport, Vec<CertTableEntry>)) -> Self {
+        SEVQuote {
+            report: attr.0,
+            certs: attr.1,
+        }
+    }
+}
 
 /// Get the quote of the SEV VM
 ///
 /// Source: https://www.amd.com/content/dam/amd/en/documents/developer/58217-epyc-9004-ug-platform-attestation-using-virtee-snp.pdf
-pub fn get_quote(
-    user_report_data: &[u8],
-) -> Result<(AttestationReport, Vec<CertTableEntry>), Error> {
+pub fn get_quote(user_report_data: &[u8]) -> Result<SEVQuote, Error> {
     // Open a connection to the firmware.
     let mut fw = Firmware::open()?;
 
+    if user_report_data.len() > SEV_REPORT_DATA_SIZE {
+        return Err(Error::InvalidFormat(format!(
+            "The user report data file should contain at most 64 bytes (read: {}B)",
+            user_report_data.len()
+        )));
+    }
+
+    let user_report_data = {
+        let padding = vec![0; SEV_REPORT_DATA_SIZE - user_report_data.len()];
+        [user_report_data, &padding].concat()
+    };
+
     // Request a standard attestation report.
-    Ok(fw.get_ext_report(
-        None,
-        Some(
-            user_report_data
-                .try_into()
-                .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
-        ),
-        None,
-    )?)
+    Ok(SEVQuote::from(
+        fw.get_ext_report(
+            None,
+            Some(
+                user_report_data
+                    .try_into()
+                    .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
+            ),
+            None,
+        )?,
+    ))
 }
 
 /// The verification of the quote includes:

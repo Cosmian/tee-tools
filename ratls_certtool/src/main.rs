@@ -26,8 +26,8 @@ async fn main() -> Result<()> {
     let opts = Cli::parse();
 
     match opts.command {
-        CliCommands::Generate(args) => args.run().await,
-        CliCommands::Verify(args) => args.run(),
+        CliCommands::Generate(args) => args.run(),
+        CliCommands::Verify(args) => args.run().await,
     }?;
 
     Ok(())

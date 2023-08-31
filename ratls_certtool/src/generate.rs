@@ -35,11 +35,10 @@ pub struct GenerateArgs {
 
 /// Parse a rfc4514 string.
 ///
-/// Example: CN=cosmian.io,O=Cosmian Tech,C=FR,L=Paris,ST=Ile-de-France"
+/// Example: `CN=cosmian.io,O=Cosmian Tech,C=FR,L=Paris,ST=Ile-de-France"`
 fn parse_rfc4514_string(s: &str) -> Result<HashMap<String, String>> {
-    let fields = s.split(',');
     let mut key_values = HashMap::new();
-    for field in fields.into_iter() {
+    for field in s.split(',') {
         let key_value: Vec<&str> = field.split('=').collect();
         if key_value.len() != 2 {
             return Err(anyhow!("'{s}' is malformed!"));
@@ -57,7 +56,7 @@ fn parse_rfc4514_string(s: &str) -> Result<HashMap<String, String>> {
 }
 
 impl GenerateArgs {
-    pub async fn run(&self) -> Result<()> {
+    pub fn run(&self) -> Result<()> {
         let extra_data: Option<[u8; 32]> = if let Some(extra_data_file) = &self.extra_data {
             let extra_data = fs::read(extra_data_file)?;
             if extra_data.len() > 32 {
@@ -72,22 +71,6 @@ impl GenerateArgs {
         } else {
             None
         };
-
-        // TODO: Demo code, remove that
-        // BEGIN
-        let unique_data: [u8; 64] = [
-            65, 77, 68, 32, 105, 115, 32, 101, 120, 116, 114, 101, 109, 101, 108, 121, 32, 97, 119,
-            101, 115, 111, 109, 101, 33, 32, 87, 101, 32, 109, 97, 107, 101, 32, 116, 104, 101, 32,
-            98, 101, 115, 116, 32, 67, 80, 85, 115, 33, 32, 65, 77, 68, 32, 82, 111, 99, 107, 115,
-            33, 33, 33, 33, 33, 33,
-        ];
-        let (attestation, certs) = sev_quote::quote::get_quote(&unique_data)?;
-        println!("{attestation:?}");
-        sev_quote::quote::verify_quote(&attestation, &certs)
-            .await
-            .unwrap();
-        println!("{attestation:?}");
-        // END
 
         let subject = parse_rfc4514_string(&self.subject)?;
 
