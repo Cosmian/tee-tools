@@ -14,12 +14,16 @@ pub struct VerifyArgs {
     #[arg(short, long)]
     cert: PathBuf,
 
-    /// Expected value of the mrenclave
-    #[arg(short, long, required = false)]
+    /// Expected value of the SEV measurement
+    #[arg(long, required = false)]
+    measurement: Option<String>,
+
+    /// Expected value of the SGX mrenclave
+    #[arg(long, required = false)]
     mrenclave: Option<String>,
 
-    /// Path of the enclave signer key (to compute mrsigner)
-    #[arg(short, long)]
+    /// Path of the SGX enclave signer key (to compute the SGX mrsigner)
+    #[arg(long)]
     signer_key: Option<PathBuf>,
 }
 
@@ -37,8 +41,15 @@ impl VerifyArgs {
             None
         };
 
+        let sev_measurement = if let Some(v) = &self.measurement {
+            Some(decode(v)?.as_slice().try_into()?)
+        } else {
+            None
+        };
+
         verify_ratls(
             fs::read_to_string(&self.cert)?.as_bytes(),
+            sev_measurement,
             mrenclave,
             mr_signer,
         )

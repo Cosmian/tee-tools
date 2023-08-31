@@ -114,6 +114,7 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<SEVQuote, Error> {
 pub async fn verify_quote(
     quote: &AttestationReport,
     certificates: &[CertTableEntry],
+    measurement: Option<[u8; 48]>,
 ) -> Result<(), Error> {
     // Try to build the Chain object by dealing with various cases.
     let vlek = certificates
@@ -153,7 +154,7 @@ pub async fn verify_quote(
     // Check the quote has been signed by the VLEK/VCEK
     verify_quote_signature(quote, &chain.vcek)?;
 
-    // Check the revolcation list
+    // Check the revocation list
     verify_revocation_list(&chain).await?;
 
     let vcek_pem = chain.vcek.to_pem()?;
@@ -169,7 +170,17 @@ pub async fn verify_quote(
         .parse_x509()
         .map_err(|e| Error::X509ParserError(e.into()))?;
 
+    // Check the TCB fields
     verify_tcb(quote, &vcek)?;
+
+    // Check the measurement
+    if let Some(measurement) = measurement {
+        if quote.measurement != measurement {
+            return Err(Error::VerificationFailure(
+                "Measurement miss-matches expected value".to_owned(),
+            ));
+        }
+    }
 
     Ok(())
 }
