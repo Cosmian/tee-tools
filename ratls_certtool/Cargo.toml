@@ -13,6 +13,7 @@ path = "src/main.rs"
 anyhow = "1.0"
 clap = { version = "4", default-features = false, features = ["cargo", "derive", "error-context", "help", "std", "string",  "usage" ] }
 hex = { workspace = true }
+openssl = { workspace = true }
 ratls = { path = "../ratls" }
 sev_quote = { path = "../sev_quote" }
 sgx_quote = { path = "../sgx_quote" }

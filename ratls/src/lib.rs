@@ -31,13 +31,13 @@ pub mod error;
 const SGX_RATLS_EXTENSION_OOID: Oid = oid!(1.2.840 .113741 .1337 .6);
 const SEV_RATLS_EXTENSION_OOID: Oid = oid!(1.2.840 .113741 .1337 .7); // TODO: find a proper value?
 
-enum PlatformType {
+pub enum PlatformType {
     Sgx,
     Sev,
 }
 
 /// Tell whether the platform is an SGX or an SEV processor
-fn guess_platform() -> Result<PlatformType, Error> {
+pub fn guess_platform() -> Result<PlatformType, Error> {
     if sev_quote::is_sev() {
         return Ok(PlatformType::Sev);
     }

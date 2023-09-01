@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 pub mod error;
+pub mod key;
 pub mod quote;
 pub mod snp_extension;
 
