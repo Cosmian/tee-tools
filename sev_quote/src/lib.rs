@@ -6,6 +6,5 @@ pub mod quote;
 pub mod snp_extension;
 
 pub fn is_sev() -> bool {
-    let path = PathBuf::from("/dev/sev-guest");
-    path.exists()
+    PathBuf::from("/dev/sev-guest").exists()
 }

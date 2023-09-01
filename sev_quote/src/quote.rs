@@ -68,7 +68,7 @@ impl From<(AttestationReport, Vec<CertTableEntry>)> for SEVQuote {
 
 /// Get the quote of the SEV VM
 ///
-/// Source: https://www.amd.com/content/dam/amd/en/documents/developer/58217-epyc-9004-ug-platform-attestation-using-virtee-snp.pdf
+/// Source: <https://www.amd.com/content/dam/amd/en/documents/developer/58217-epyc-9004-ug-platform-attestation-using-virtee-snp.pdf>
 pub fn get_quote(user_report_data: &[u8]) -> Result<SEVQuote, Error> {
     // Open a connection to the firmware.
     let mut fw = Firmware::open()?;
@@ -109,8 +109,8 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<SEVQuote, Error> {
 /// - VCEK = Versioned Chip Endorsement Key
 ///
 /// Reference:
-/// - https://www.amd.com/content/dam/amd/en/documents/epyc-technical-docs/specifications/57230.pdf
-/// - https://www.amd.com/content/dam/amd/en/documents/developer/58217-epyc-9004-ug-platform-attestation-using-virtee-snp.pdf
+/// - <https://www.amd.com/content/dam/amd/en/documents/epyc-technical-docs/specifications/57230.pdf>
+/// - <https://www.amd.com/content/dam/amd/en/documents/developer/58217-epyc-9004-ug-platform-attestation-using-virtee-snp.pdf>
 pub async fn verify_quote(
     quote: &AttestationReport,
     certificates: &[CertTableEntry],
@@ -120,7 +120,7 @@ pub async fn verify_quote(
     let vlek = certificates
         .iter()
         .find(|item| item.cert_type == CertType::OTHER(AWS_VLEK_TYPE));
-    let ark: Option<&CertTableEntry> = certificates
+    let ark = certificates
         .iter()
         .find(|item| item.cert_type == CertType::ARK);
     let ask = certificates
@@ -221,27 +221,29 @@ fn verify_chain_certificates(cert_chain: &Chain) -> Result<(), Error> {
     let ask = &cert_chain.ca.ask;
     let vcek = &cert_chain.vcek;
 
-    if (ark, ark).verify().is_ok() {
-        debug!("The AMD ARK was self-signed...");
-        if (ark, ask).verify().is_ok() {
-            debug!("The AMD ASK was signed by the AMD ARK...");
-            if (ask, vcek).verify().is_ok() {
-                debug!("The VCEK was signed by the AMD ASK...");
-            } else {
-                return Err(Error::VerificationFailure(
-                    "The VCEK was not signed by the AMD ASK!".to_owned(),
-                ));
-            }
-        } else {
-            return Err(Error::VerificationFailure(
-                "The AMD ASK was not signed by the AMD ARK!".to_owned(),
-            ));
-        }
-    } else {
+    if (ark, ark).verify().is_err() {
         return Err(Error::VerificationFailure(
             "The AMD ARK is not self-signed!".to_owned(),
         ));
     }
+
+    debug!("The AMD ARK was self-signed...");
+
+    if (ark, ask).verify().is_err() {
+        return Err(Error::VerificationFailure(
+            "The AMD ASK was not signed by the AMD ARK!".to_owned(),
+        ));
+    }
+
+    debug!("The AMD ASK was signed by the AMD ARK...");
+
+    if (ask, vcek).verify().is_err() {
+        return Err(Error::VerificationFailure(
+            "The VCEK was not signed by the AMD ASK!".to_owned(),
+        ));
+    }
+
+    debug!("The VCEK was signed by the AMD ASK...");
 
     Ok(())
 }

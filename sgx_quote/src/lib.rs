@@ -7,6 +7,5 @@ pub mod quote;
 pub mod verify;
 
 pub fn is_sgx() -> bool {
-    let path = PathBuf::from("/dev/attestation/quote");
-    path.exists()
+    PathBuf::from("/dev/attestation/quote").exists()
 }
