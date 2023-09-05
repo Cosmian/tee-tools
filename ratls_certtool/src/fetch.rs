@@ -5,7 +5,7 @@ use clap::Args;
 use openssl::x509::X509;
 use ratls::get_server_certificate;
 
-/// Fetch an RATLS certificate from a domain nameg
+/// Fetch an RATLS certificate from a domain name
 #[derive(Args, Debug)]
 pub struct FetchArgs {
     /// The server name to fetch
