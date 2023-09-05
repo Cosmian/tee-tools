@@ -255,6 +255,7 @@ pub fn generate_ratls_cert(
     builder.set_issuer_name(&x509_name)?;
 
     // Set the TLS extensions
+    builder.set_version(2)?;
     builder.append_extension(alternative_name.build(&builder.x509v3_context(None, None))?)?;
     builder.append_extension(BasicConstraints::new().ca().critical().build()?)?;
     builder.append_extension(get_ratls_extension(&public_ec_key, quote_extra_data)?)?;
@@ -300,8 +301,10 @@ pub fn get_server_certificate(domain: &str, port: u32) -> Result<Vec<u8>, Error>
 
     let rc_config = std::sync::Arc::new(config);
     let dns_name = domain.try_into().map_err(|_| Error::DNSNameError)?;
+
     let mut client =
         rustls::ClientConnection::new(rc_config, dns_name).map_err(|_| Error::ConnectionError)?;
+
     let mut stream = rustls::Stream::new(&mut client, &mut socket);
     stream.write_all(b"GET / HTTP/1.1\r\nConnection: close\r\n\r\n")?;
 

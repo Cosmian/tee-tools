@@ -2,10 +2,12 @@ use anyhow::Result;
 
 use clap::{Parser, Subcommand};
 
+pub mod fetch;
 pub mod generate;
 pub mod key;
 pub mod verify;
 
+use fetch::FetchArgs;
 use generate::GenerateArgs;
 use key::KeyArgs;
 use verify::VerifyArgs;
@@ -20,6 +22,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum CliCommands {
     Generate(GenerateArgs),
+    Fetch(FetchArgs),
     Key(KeyArgs),
     Verify(VerifyArgs),
 }
@@ -30,6 +33,7 @@ async fn main() -> Result<()> {
 
     match opts.command {
         CliCommands::Generate(args) => args.run(),
+        CliCommands::Fetch(args) => args.run(),
         CliCommands::Key(args) => args.run(),
         CliCommands::Verify(args) => args.run().await,
     }?;
