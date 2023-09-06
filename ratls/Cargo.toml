@@ -3,7 +3,7 @@ name = "ratls"
 version = "0.1.0"
 edition = "2021"
 license = "MIT/Apache-2.0"
-description = "Intel SGX verification of Remote Attestation based TLS certificate"
+description = "Intel SGX/AMD SEV verification of Remote Attestation based TLS certificate"
 
 [dependencies]
 asn1-rs = { workspace = true }

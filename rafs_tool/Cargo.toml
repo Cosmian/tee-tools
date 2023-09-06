@@ -1,16 +1,17 @@
 [package]
-name = "ratls-certtool"
+name = "rafs-tool"
 version = "0.1.0"
 edition = "2021"
 license = "MIT/Apache-2.0"
-description = "Intel SGX/AMD SEV verification of Remote Attestation based TLS certificate tool"
+description = "Intel SGX/AMD SEV verification of Remote Attestation based on FS data sharing"
 
 [[bin]]
-name = "ratls-certtool"
+name = "rafs-tool"
 path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
+bincode = { workspace = true }
 clap = { version = "4", default-features = false, features = ["cargo", "derive", "error-context", "help", "std", "string",  "usage" ] }
 hex = { workspace = true }
 openssl = { workspace = true }
