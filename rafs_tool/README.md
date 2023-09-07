@@ -29,6 +29,8 @@ Also, the folder `shared` contains the quote and the public key of the secure en
 $ sudo ./rafs-tool proxy --client-public-key key.pub 
 ```
 
+The quote and the public key of the trusted environment will be generated in the  `shared` directory.
+
 The `client-public-key` value has to be generated first. The proxy will encrypt the files from `output_plain` into `output_enc` using that key. You can first generated that key as follow:
 
 ```console

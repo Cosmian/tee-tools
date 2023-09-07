@@ -11,7 +11,7 @@ use std::{fs, time};
 
 use crate::common::{
     decrypt, derive_shared_key, encrypt, is_thread_safe_readable, sha256, thread_safe_read,
-    thread_safe_write, unique_filename, CURVE_NAME, SHARED_KEY_SIZE,
+    thread_safe_write, unique_filename, CURVE_NAME,
 };
 
 /// Proxify files en-/de-cryption
