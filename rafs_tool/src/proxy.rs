@@ -11,7 +11,7 @@ use std::{fs, time};
 
 use crate::common::{
     decrypt, derive_shared_key, encrypt, is_thread_safe_readable, sha256, thread_safe_read,
-    thread_safe_write, unique_filename, CURVE_NAME,
+    thread_safe_write, unique_filename, CURVE_NAME, SHARED_KEY_SIZE,
 };
 
 /// Proxify files en-/de-cryption
@@ -186,8 +186,7 @@ fn encrypt_directory(
         let content = thread_safe_read(&path)?;
 
         // Recompute the share key
-        let shared_key: [u8; 48] =
-            derive_shared_key(proxy_private_key.clone(), peer_public_key.clone())?;
+        let shared_key = derive_shared_key(proxy_private_key.clone(), peer_public_key.clone())?;
         let mut ctx = BigNumContext::new()?;
 
         // Encrypt the file

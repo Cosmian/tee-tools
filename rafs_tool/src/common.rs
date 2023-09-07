@@ -18,16 +18,18 @@ use openssl::{
 };
 
 pub(crate) const CURVE_NAME: Nid = Nid::SECP384R1;
-pub(crate) const AES_KEY_SIZE: usize = 48;
+pub(crate) const SHARED_KEY_SIZE: usize = 48;
+pub(crate) const AES_KEY_SIZE: usize = 32;
 pub(crate) const AES_NOUNCE_SIZE: usize = 12;
 pub(crate) const HKDF_SALT_SIZE: usize = 16;
 pub(crate) const AES_TAG_SIZE: usize = 16;
 pub(crate) const AES_AAD: &[u8] = b"encrypt data with rafs";
+pub(crate) const QUOTE_FINGERPRINT_SIZE: usize = 32;
 const LOCK_FILE_EXT: &str = ".lock";
 
 /// Proceed an HKDF using SHA256 on a key and using a given salt
 pub fn hkdf(key: &[u8], salt: &[u8; HKDF_SALT_SIZE]) -> Result<Vec<u8>> {
-    let mut k = [0; 32];
+    let mut k = [0; AES_KEY_SIZE];
     let mut pkey = PkeyCtx::new_id(Id::HKDF)?;
 
     pkey.derive_init()?;
@@ -51,11 +53,11 @@ pub fn sha256(data: &[u8]) -> Vec<u8> {
 pub fn derive_shared_key(
     private_key: EcKey<Private>,
     peer_public_key: EcKey<Public>,
-) -> Result<[u8; AES_KEY_SIZE]> {
+) -> Result<[u8; SHARED_KEY_SIZE]> {
     let mut pkey = PkeyCtx::new(PKey::from_ec_key(private_key)?.as_ref())?;
     pkey.derive_init()?;
     pkey.derive_set_peer(PKey::from_ec_key(peer_public_key)?.as_ref())?;
-    let mut shared_key = [0u8; AES_KEY_SIZE];
+    let mut shared_key = [0u8; SHARED_KEY_SIZE];
     pkey.derive(Some(&mut shared_key))?;
 
     Ok(shared_key)
@@ -74,8 +76,8 @@ pub fn decrypt(content: &[u8], private_key: EcKey<Private>) -> Result<Vec<u8>> {
     // Deserialize the bytes
     let salt: [u8; HKDF_SALT_SIZE] = content[0..HKDF_SALT_SIZE].try_into()?;
     let mut offset = HKDF_SALT_SIZE;
-    let peer_public_key = &content[offset..offset + AES_KEY_SIZE + 1];
-    offset += AES_KEY_SIZE + 1;
+    let peer_public_key = &content[offset..offset + SHARED_KEY_SIZE + 1];
+    offset += SHARED_KEY_SIZE + 1;
     let nounce: [u8; AES_NOUNCE_SIZE] = content[offset..offset + AES_NOUNCE_SIZE].try_into()?;
     offset += AES_NOUNCE_SIZE;
     let tag: [u8; AES_TAG_SIZE] = content[offset..offset + AES_TAG_SIZE].try_into()?;
@@ -107,7 +109,11 @@ pub fn decrypt(content: &[u8], private_key: EcKey<Private>) -> Result<Vec<u8>> {
 }
 
 /// Enncrypt bytes
-pub fn encrypt(content: &[u8], shared_key: [u8; 48], public_key: &[u8]) -> Result<Vec<u8>> {
+pub fn encrypt(
+    content: &[u8],
+    shared_key: [u8; SHARED_KEY_SIZE],
+    public_key: &[u8],
+) -> Result<Vec<u8>> {
     let mut salt = [0u8; HKDF_SALT_SIZE];
     let mut tag = [0u8; AES_TAG_SIZE];
     rand_bytes(&mut salt)?;

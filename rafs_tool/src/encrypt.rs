@@ -8,7 +8,9 @@ use openssl::{
 use sev_quote::quote::{verify_quote, SEVQuote};
 use std::{fs, path::PathBuf};
 
-use crate::common::{derive_shared_key, encrypt, sha256, unique_filename, CURVE_NAME};
+use crate::common::{
+    derive_shared_key, encrypt, sha256, unique_filename, CURVE_NAME, QUOTE_FINGERPRINT_SIZE,
+};
 
 /// Encrypt a file for a trusted environment
 #[derive(Args, Debug)]
@@ -51,7 +53,9 @@ impl EncryptArgs {
         let quote: SEVQuote = bincode::deserialize(&fs::read(&self.quote)?)?;
         verify_quote(&quote.report, &quote.certs, sev_measurement).await?;
 
-        if quote.report.report_data[0..32] != sha256(&peer_public_key.public_key_to_der()?) {
+        if quote.report.report_data[0..QUOTE_FINGERPRINT_SIZE]
+            != sha256(&peer_public_key.public_key_to_der()?)
+        {
             return Err(anyhow!("The trusted environment public key does not match the value in the quote report data"));
         }
 
