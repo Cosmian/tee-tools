@@ -1,4 +1,5 @@
 use crate::error::Error;
+use asn1_rs::oid;
 use openssl::{
     asn1::{Asn1Object, Asn1OctetString, Asn1Time},
     bn::{BigNum, MsbOption},
@@ -16,18 +17,37 @@ use rustls::{
     client::{ServerCertVerifier, ServerName},
     Certificate, Error as RustTLSError,
 };
-use sgx_quote::quote::{get_quote, parse_quote, verify_quote};
+use sev_quote::{self, quote::SEVQuote};
+
+use std::time::SystemTime;
 use std::{io::Write, net::Ipv4Addr};
-use std::{str::FromStr, time::SystemTime};
 use x509_parser::{
     oid_registry::Oid,
-    parse_x509_certificate,
     prelude::{parse_x509_pem, X509Certificate},
 };
 
 pub mod error;
 
-const RATLS_EXTENSION_OOID: &str = "1.2.840.113741.1337.6";
+const SGX_RATLS_EXTENSION_OOID: Oid = oid!(1.2.840 .113741 .1337 .6);
+const SEV_RATLS_EXTENSION_OOID: Oid = oid!(1.2.840 .113741 .1337 .7); // TODO: find a proper value?
+
+pub enum PlatformType {
+    Sgx,
+    Sev,
+}
+
+/// Tell whether the platform is an SGX or an SEV processor
+pub fn guess_platform() -> Result<PlatformType, Error> {
+    if sev_quote::is_sev() {
+        return Ok(PlatformType::Sev);
+    }
+
+    if sgx_quote::is_sgx() {
+        return Ok(PlatformType::Sgx);
+    }
+
+    Err(Error::InvalidPlatform)
+}
 
 /// Verify the RATLS certificate.
 ///
@@ -36,56 +56,84 @@ const RATLS_EXTENSION_OOID: &str = "1.2.840.113741.1337.6";
 /// - The MRsigner
 /// - The report data content
 /// - The quote collaterals
-pub fn verify_ratls(
+pub async fn verify_ratls(
     pem_ratls_cert: &[u8],
+    sev_measurement: Option<[u8; 48]>,
     mr_enclave: Option<[u8; 32]>,
     mr_signer: Option<[u8; 32]>,
 ) -> Result<(), Error> {
     let (rem, pem) = parse_x509_pem(pem_ratls_cert)?;
 
-    if !rem.is_empty() || pem.label != *"CERTIFICATE" {
+    if !rem.is_empty() || &pem.label != "CERTIFICATE" {
         return Err(Error::InvalidFormat(
             "Not a certificate or certificate is malformed".to_owned(),
         ));
     }
 
-    let content = pem.contents.to_owned();
-    let (_, ratls_cert) =
-        parse_x509_certificate(content.as_ref()).map_err(|e| Error::X509ParserError(e.into()))?;
+    let ratls_cert = pem
+        .parse_x509()
+        .map_err(|e| Error::X509ParserError(e.into()))?;
 
     // Get the quote from the certificate
-    let quote = extract_quote(&ratls_cert)?;
-    let (quote, _, _, _) = parse_quote(&quote)?;
+    let (quote, platform) = extract_quote(&ratls_cert)?;
 
-    // Verify the first bytes of the report data
-    // It should be the fingerprint of the certificate
-    // public key (DER format)
+    match platform {
+        PlatformType::Sev => {
+            let quote: SEVQuote = bincode::deserialize(&quote).map_err(|_| {
+                Error::InvalidFormat("Can't deserialize the SEV quote bytes".to_owned())
+            })?;
+
+            verify_report_data(&quote.report.report_data[0..32], &ratls_cert)?;
+
+            // Verify the quote itself
+            Ok(
+                sev_quote::quote::verify_quote(&quote.report, &quote.certs, sev_measurement)
+                    .await?,
+            )
+        }
+        PlatformType::Sgx => {
+            let (quote, _, _, _) = sgx_quote::quote::parse_quote(&quote)?;
+            verify_report_data(&quote.report_body.report_data[0..32], &ratls_cert)?;
+
+            // Verify the quote itself
+            Ok(sgx_quote::quote::verify_quote(
+                &quote, mr_enclave, mr_signer,
+            )?)
+        }
+    }
+}
+
+/// Verify the first bytes of the report data
+/// It should be the fingerprint of the certificate public key (DER format)
+fn verify_report_data(report_data: &[u8], ratls_cert: &X509Certificate) -> Result<(), Error> {
     let public_key = ratls_cert.public_key().raw;
     let expected_digest = digest_ratls_public_key(public_key);
 
-    if quote.report_body.report_data[0..32] != expected_digest {
+    if report_data != expected_digest {
         return Err(Error::VerificationFailure(
             "Failed to verify the RA-TLS public key fingerprint".to_owned(),
         ));
     }
 
-    // Verify the quote itself
-    Ok(verify_quote(&quote, mr_enclave, mr_signer)?)
+    Ok(())
 }
 
 /// Extract the quote from an RATLS certificate
-pub fn extract_quote(ratls_cert: &X509Certificate) -> Result<Vec<u8>, Error> {
-    let quote =
-        match ratls_cert.get_extension_unique(&Oid::from_str(RATLS_EXTENSION_OOID).unwrap())? {
-            Some(ext) => ext.value,
-            None => {
-                return Err(Error::InvalidFormat(
-                    "This is not an RATLS certificate".to_owned(),
-                ))
-            }
-        };
+fn extract_quote(ratls_cert: &X509Certificate) -> Result<(Vec<u8>, PlatformType), Error> {
+    // Try to extract SGX quote
+    if let Some(quote) = ratls_cert.get_extension_unique(&SGX_RATLS_EXTENSION_OOID)? {
+        return Ok((quote.value.to_vec(), PlatformType::Sgx));
+    }
 
-    Ok(quote.to_vec())
+    // Try to extract SEV quote
+    if let Some(quote) = ratls_cert.get_extension_unique(&SEV_RATLS_EXTENSION_OOID)? {
+        return Ok((quote.value.to_vec(), PlatformType::Sev));
+    }
+
+    // Not a RATLS certificate
+    Err(Error::InvalidFormat(
+        "This is not an RATLS certificate".to_owned(),
+    ))
 }
 
 /// Compute the fingerprint of the ratls public key
@@ -113,11 +161,25 @@ pub fn get_ratls_extension(
     );
 
     // Generate the quote
-    let quote = get_quote(&user_report_data)?;
+    let (quote, extension_ooid) = match guess_platform()? {
+        PlatformType::Sev => {
+            let quote = sev_quote::quote::get_quote(&user_report_data)?;
+            (
+                bincode::serialize(&quote).map_err(|_| {
+                    Error::InvalidFormat("Can't serialize the SEV quote".to_owned())
+                })?,
+                SEV_RATLS_EXTENSION_OOID,
+            )
+        }
+        PlatformType::Sgx => (
+            sgx_quote::quote::get_quote(&user_report_data)?,
+            SGX_RATLS_EXTENSION_OOID,
+        ),
+    };
 
     // Create the custom RATLS extension X509
     Ok(X509Extension::new_from_der(
-        Asn1Object::from_str(RATLS_EXTENSION_OOID)?.as_ref(),
+        Asn1Object::from_str(&extension_ooid.to_string())?.as_ref(),
         false,
         Asn1OctetString::new_from_bytes(&quote)?.as_ref(),
     )?)
@@ -193,6 +255,7 @@ pub fn generate_ratls_cert(
     builder.set_issuer_name(&x509_name)?;
 
     // Set the TLS extensions
+    builder.set_version(2)?;
     builder.append_extension(alternative_name.build(&builder.x509v3_context(None, None))?)?;
     builder.append_extension(BasicConstraints::new().ca().critical().build()?)?;
     builder.append_extension(get_ratls_extension(&public_ec_key, quote_extra_data)?)?;
@@ -238,12 +301,12 @@ pub fn get_server_certificate(domain: &str, port: u32) -> Result<Vec<u8>, Error>
 
     let rc_config = std::sync::Arc::new(config);
     let dns_name = domain.try_into().map_err(|_| Error::DNSNameError)?;
+
     let mut client =
         rustls::ClientConnection::new(rc_config, dns_name).map_err(|_| Error::ConnectionError)?;
+
     let mut stream = rustls::Stream::new(&mut client, &mut socket);
-    stream
-        .write_all(b"GET / HTTP/1.1\r\nConnection: close\r\n\r\n")
-        .unwrap();
+    stream.write_all(b"GET / HTTP/1.1\r\nConnection: close\r\n\r\n")?;
 
     let certificates = client
         .peer_certificates()

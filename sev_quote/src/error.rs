@@ -2,24 +2,22 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("ConnectionError")]
-    ConnectionError,
     #[error(transparent)]
     CryptoError(#[from] openssl::error::ErrorStack),
-    #[error("DNSNameError")]
-    DNSNameError,
-    #[error("Can't guess the current platform type")]
-    InvalidPlatform,
-    #[error(transparent)]
-    IOError(#[from] std::io::Error),
     #[error("{0}")]
     InvalidFormat(String),
-    #[error("ServerCertificateError")]
-    ServerCertificateError,
     #[error(transparent)]
-    SEVQuoteError(#[from] sev_quote::error::Error),
+    IOError(#[from] std::io::Error),
+    #[error("The attestation report is malformed")]
+    QuoteMalformed,
     #[error(transparent)]
-    SGXQuoteError(#[from] sgx_quote::error::Error),
+    RequestAPIError(#[from] reqwest::Error),
+    #[error("{0}")]
+    ResponseAPIError(String),
+    #[error(transparent)]
+    SevError(#[from] sev::error::UserApiError),
+    #[error("{0}")]
+    Unimplemented(String),
     #[error("{0}")]
     VerificationFailure(String),
     #[error(transparent)]

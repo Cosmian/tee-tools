@@ -35,11 +35,10 @@ pub struct GenerateArgs {
 
 /// Parse a rfc4514 string.
 ///
-/// Example: CN=cosmian.io,O=Cosmian Tech,C=FR,L=Paris,ST=Ile-de-France"
+/// Example: `CN=cosmian.io,O=Cosmian Tech,C=FR,L=Paris,ST=Ile-de-France"`
 fn parse_rfc4514_string(s: &str) -> Result<HashMap<String, String>> {
-    let fields = s.split(',');
     let mut key_values = HashMap::new();
-    for field in fields.into_iter() {
+    for field in s.split(',') {
         let key_value: Vec<&str> = field.split('=').collect();
         if key_value.len() != 2 {
             return Err(anyhow!("'{s}' is malformed!"));

@@ -14,20 +14,34 @@ pub struct VerifyArgs {
     #[arg(short, long)]
     cert: PathBuf,
 
-    /// Expected value of the mrenclave
-    #[arg(short, long, required = false)]
+    /// Expected value of the SEV measurement
+    #[arg(long, required = false)]
+    measurement: Option<String>,
+
+    /// Expected value of the SGX mrenclave
+    #[arg(long, required = false)]
     mrenclave: Option<String>,
 
-    /// Path of the enclave signer key (to compute mrsigner)
-    #[arg(short, long)]
-    signer_key: PathBuf,
+    /// Path of the SGX enclave signer key (to compute the SGX mrsigner)
+    #[arg(long)]
+    signer_key: Option<PathBuf>,
 }
 
 impl VerifyArgs {
-    pub fn run(&self) -> Result<()> {
-        let mr_signer = compute_mr_signer(&fs::read_to_string(self.signer_key.clone())?)?;
+    pub async fn run(&self) -> Result<()> {
+        let mr_signer = if let Some(path) = &self.signer_key {
+            Some(compute_mr_signer(&fs::read_to_string(path)?)?)
+        } else {
+            None
+        };
 
-        let mrenclave = if let Some(v) = self.mrenclave.clone() {
+        let mrenclave = if let Some(v) = &self.mrenclave {
+            Some(decode(v)?.as_slice().try_into()?)
+        } else {
+            None
+        };
+
+        let sev_measurement = if let Some(v) = &self.measurement {
             Some(decode(v)?.as_slice().try_into()?)
         } else {
             None
@@ -35,9 +49,11 @@ impl VerifyArgs {
 
         verify_ratls(
             fs::read_to_string(&self.cert)?.as_bytes(),
+            sev_measurement,
             mrenclave,
-            Some(mr_signer),
-        )?;
+            mr_signer,
+        )
+        .await?;
 
         println!("Verification succeed!");
 

@@ -3,9 +3,9 @@ use std::fmt;
 #[derive(Debug)]
 pub enum SgxPckExtensionError {
     PEMParsingError,
-    X509ParsingError,
     SgxPckExtensionNotFoundError,
     SgxPckParsingError,
+    X509ParsingError,
 }
 
 impl fmt::Display for SgxPckExtensionError {
