@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "ratls",   
+    "rafs_tool",
     "ratls_certtool",
     "sev_quote",
     "sgx_quote",
