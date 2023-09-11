@@ -31,19 +31,19 @@ pub mod error;
 const SGX_RATLS_EXTENSION_OOID: Oid = oid!(1.2.840 .113741 .1337 .6);
 const SEV_RATLS_EXTENSION_OOID: Oid = oid!(1.2.840 .113741 .1337 .7); // TODO: find a proper value?
 
-pub enum PlatformType {
+pub enum TeeType {
     Sgx,
     Sev,
 }
 
 /// Tell whether the platform is an SGX or an SEV processor
-pub fn guess_platform() -> Result<PlatformType, Error> {
+pub fn guess_tee() -> Result<TeeType, Error> {
     if sev_quote::is_sev() {
-        return Ok(PlatformType::Sev);
+        return Ok(TeeType::Sev);
     }
 
     if sgx_quote::is_sgx() {
-        return Ok(PlatformType::Sgx);
+        return Ok(TeeType::Sgx);
     }
 
     Err(Error::InvalidPlatform)
@@ -78,7 +78,7 @@ pub async fn verify_ratls(
     let (quote, platform) = extract_quote(&ratls_cert)?;
 
     match platform {
-        PlatformType::Sev => {
+        TeeType::Sev => {
             let quote: SEVQuote = bincode::deserialize(&quote).map_err(|_| {
                 Error::InvalidFormat("Can't deserialize the SEV quote bytes".to_owned())
             })?;
@@ -91,7 +91,7 @@ pub async fn verify_ratls(
                     .await?,
             )
         }
-        PlatformType::Sgx => {
+        TeeType::Sgx => {
             let (quote, _, _, _) = sgx_quote::quote::parse_quote(&quote)?;
             verify_report_data(&quote.report_body.report_data[0..32], &ratls_cert)?;
 
@@ -119,15 +119,15 @@ fn verify_report_data(report_data: &[u8], ratls_cert: &X509Certificate) -> Resul
 }
 
 /// Extract the quote from an RATLS certificate
-fn extract_quote(ratls_cert: &X509Certificate) -> Result<(Vec<u8>, PlatformType), Error> {
+fn extract_quote(ratls_cert: &X509Certificate) -> Result<(Vec<u8>, TeeType), Error> {
     // Try to extract SGX quote
     if let Some(quote) = ratls_cert.get_extension_unique(&SGX_RATLS_EXTENSION_OOID)? {
-        return Ok((quote.value.to_vec(), PlatformType::Sgx));
+        return Ok((quote.value.to_vec(), TeeType::Sgx));
     }
 
     // Try to extract SEV quote
     if let Some(quote) = ratls_cert.get_extension_unique(&SEV_RATLS_EXTENSION_OOID)? {
-        return Ok((quote.value.to_vec(), PlatformType::Sev));
+        return Ok((quote.value.to_vec(), TeeType::Sev));
     }
 
     // Not a RATLS certificate
@@ -161,8 +161,8 @@ pub fn get_ratls_extension(
     );
 
     // Generate the quote
-    let (quote, extension_ooid) = match guess_platform()? {
-        PlatformType::Sev => {
+    let (quote, extension_ooid) = match guess_tee()? {
+        TeeType::Sev => {
             let quote = sev_quote::quote::get_quote(&user_report_data)?;
             (
                 bincode::serialize(&quote).map_err(|_| {
@@ -171,7 +171,7 @@ pub fn get_ratls_extension(
                 SEV_RATLS_EXTENSION_OOID,
             )
         }
-        PlatformType::Sgx => (
+        TeeType::Sgx => (
             sgx_quote::quote::get_quote(&user_report_data)?,
             SGX_RATLS_EXTENSION_OOID,
         ),

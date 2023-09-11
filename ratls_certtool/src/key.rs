@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Args;
 use openssl::pkey::{Id, PKey};
-use ratls::{guess_platform, PlatformType};
+use ratls::{guess_tee, TeeType};
 use std::fs;
 use std::path::PathBuf;
 
@@ -22,9 +22,9 @@ impl KeyArgs {
         let public_key_path = self.output.join(PathBuf::from("key.pub"));
         let private_key_path = self.output.join(PathBuf::from("key.pem"));
 
-        let secret = match guess_platform()? {
-            PlatformType::Sgx => sgx_quote::key::get_key(!self.no_salt)?,
-            PlatformType::Sev => sev_quote::key::get_key(!self.no_salt)?,
+        let secret = match guess_tee()? {
+            TeeType::Sgx => sgx_quote::key::get_key(!self.no_salt)?,
+            TeeType::Sev => sev_quote::key::get_key(!self.no_salt)?,
         };
         let public_key = PKey::private_key_from_raw_bytes(&secret, Id::X25519)?.raw_public_key()?;
 
