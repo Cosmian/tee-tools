@@ -1,168 +1,430 @@
-use intel_tee_quote_verification_rs as qvl;
-use qvl::{
-    sgx_ql_qv_result_t, sgx_ql_qv_supplemental_t, tee_get_supplemental_data_version_and_size,
-    tee_qv_get_collateral, tee_supp_data_descriptor_t, tee_verify_quote,
+use crate::error::Error;
+use crate::quote::{
+    AuthData, EcdsaSigData, QUOTE_BODY_SIZE, QUOTE_QE_REPORT_OFFSET, QUOTE_QE_REPORT_SIZE,
 };
-use std::mem;
-use std::time::{Duration, SystemTime};
 
-pub fn qvl_ecdsa_quote_verify(quote: &[u8]) {
-    let mut collateral_expiration_status = 1u32;
-    let mut quote_verification_result = sgx_ql_qv_result_t::SGX_QL_QV_RESULT_UNSPECIFIED;
+use chrono::{NaiveDateTime, Utc};
+use elliptic_curve::pkcs8::DecodePublicKey;
+use log::debug;
+use p256::ecdsa::signature::Verifier;
+use p256::ecdsa::{Signature, VerifyingKey};
+use p256::{AffinePoint, EncodedPoint};
+use reqwest::get;
+use serde::Deserialize;
+use sgx_pck_extension::SgxPckExtension;
+use sha2::{Digest, Sha256};
+use x509_parser::certificate::X509Certificate;
+use x509_parser::parse_x509_certificate;
+use x509_parser::pem::parse_x509_pem;
+use x509_parser::prelude::FromDer;
+use x509_parser::revocation_list::CertificateRevocationList;
 
-    let mut supp_data: sgx_ql_qv_supplemental_t = Default::default();
-    let mut supp_data_desc = tee_supp_data_descriptor_t {
-        major_version: 0,
-        data_size: 0,
-        p_data: &mut supp_data as *mut sgx_ql_qv_supplemental_t as *mut u8,
-    };
+use elliptic_curve::sec1::FromEncodedPoint;
 
-    // Untrusted quote verification
+pub(crate) async fn verify_pck_chain_and_tcb(
+    raw_quote: &[u8],
+    certification_data: &[u8],
+    qe_report_signature: &[u8],
+    pccs_url: &str,
+) -> Result<(), Error> {
+    debug!("Extracting certificate chain...");
+    let chain = get_certificate_chain_from_pem(certification_data)?;
 
-    // call DCAP quote verify library to get supplemental latest version and data size
-    // version is a combination of major_version and minor version
-    // you can set the major version in 'supp_data.major_version' to get old version supplemental data
-    // only support major_version 3 right now
-    //
-    match tee_get_supplemental_data_version_and_size(quote) {
-        Ok((supp_ver, supp_size)) => {
-            if supp_size == mem::size_of::<sgx_ql_qv_supplemental_t>() as u32 {
-                println!("tee_get_quote_supplemental_data_version_and_size successfully returned.");
-                println!(
-                    "latest supplemental data major version: {}, minor version: {}, size: {}",
-                    u16::from_be_bytes(supp_ver.to_be_bytes()[..2].try_into().unwrap()),
-                    u16::from_be_bytes(supp_ver.to_be_bytes()[2..].try_into().unwrap()),
-                    supp_size,
-                );
-                supp_data_desc.data_size = supp_size;
-            } else {
-                println!("Quote supplemental data size is different between DCAP QVL and QvE, please make sure you installed DCAP QVL and QvE from same release.")
-            }
-        }
-        Err(e) => panic!(
-            "tee_get_quote_supplemental_data_size failed: {:#04x}",
-            e as u32
-        ),
+    if chain.len() != 3 {
+        return Err(Error::InvalidFormat(
+            "Certificate chain is incompleted".to_owned(),
+        ));
     }
 
-    // get collateral
-    let _collateral = match tee_qv_get_collateral(quote) {
-        Ok(c) => {
-            println!("tee_qv_get_collateral successfully returned.");
-            Some(c)
-        }
-        Err(e) => {
-            println!("tee_qv_get_collateral failed: {:#04x}", e as u32);
-            None
-        }
-    };
-    let p_collateral: Option<&[u8]> = None;
+    debug!("Converting certs...");
+    let (_, pck_cert) =
+        parse_x509_certificate(&chain[0]).map_err(|e| Error::X509ParserError(e.into()))?;
+    let (_, pck_ca_cert) =
+        parse_x509_certificate(&chain[1]).map_err(|e| Error::X509ParserError(e.into()))?;
+    let (_, root_ca_cert) =
+        parse_x509_certificate(&chain[2]).map_err(|e| Error::X509ParserError(e.into()))?;
 
-    // set current time. This is only for sample purposes, in production mode a trusted time should be used.
-    //
-    let current_time = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or(Duration::ZERO)
-        .as_secs() as i64;
-
-    let p_supplemental_data = match supp_data_desc.data_size {
-        0 => None,
-        _ => Some(&mut supp_data_desc),
-    };
-
-    // call DCAP quote verify library for quote verification
-    // here you can choose 'trusted' or 'untrusted' quote verification by specifying parameter '&qve_report_info'
-    // if '&qve_report_info' is NOT NULL, this API will call Intel QvE to verify quote
-    // if '&qve_report_info' is NULL, this API will call 'untrusted quote verify lib' to verify quote, this mode doesn't rely on SGX capable system, but the results can not be cryptographically authenticated
-    match tee_verify_quote(quote, p_collateral, current_time, None, p_supplemental_data) {
-        Ok((colla_exp_stat, qv_result)) => {
-            collateral_expiration_status = colla_exp_stat;
-            quote_verification_result = qv_result;
-            println!("App: tee_verify_quote successfully returned.");
-        }
-        Err(e) => println!("App: tee_verify_quote failed: {:#04x}", e as u32),
-    }
-
-    // check verification result
-    //
-    match quote_verification_result {
-        sgx_ql_qv_result_t::SGX_QL_QV_RESULT_OK => {
-            // check verification collateral expiration status
-            // this value should be considered in your own attestation/verification policy
-            //
-            if collateral_expiration_status == 0 {
-                println!("App: Verification completed successfully.");
-            } else {
-                println!("App: Verification completed, but collateral is out of date based on 'expiration_check_date' you provided.");
-            }
-        }
-        sgx_ql_qv_result_t::SGX_QL_QV_RESULT_CONFIG_NEEDED
-        | sgx_ql_qv_result_t::SGX_QL_QV_RESULT_OUT_OF_DATE
-        | sgx_ql_qv_result_t::SGX_QL_QV_RESULT_OUT_OF_DATE_CONFIG_NEEDED
-        | sgx_ql_qv_result_t::SGX_QL_QV_RESULT_SW_HARDENING_NEEDED
-        | sgx_ql_qv_result_t::SGX_QL_QV_RESULT_CONFIG_AND_SW_HARDENING_NEEDED => {
-            println!(
-                "App: Verification completed with Non-terminal result: {:x}",
-                quote_verification_result as u32
-            );
-        }
-        sgx_ql_qv_result_t::SGX_QL_QV_RESULT_INVALID_SIGNATURE
-        | sgx_ql_qv_result_t::SGX_QL_QV_RESULT_REVOKED
-        | sgx_ql_qv_result_t::SGX_QL_QV_RESULT_UNSPECIFIED
-        | sgx_ql_qv_result_t::SGX_QL_QV_RESULT_MAX => {
-            println!(
-                "App: Verification completed with Terminal result: {:x}",
-                quote_verification_result as u32
-            );
-        }
-    }
-
-    // check supplemental data if necessary
-    //
-    if supp_data_desc.data_size > 0 {
-        // you can check supplemental data based on your own attestation/verification policy
-        // here we only print supplemental data version for demo usage
-        //
-        let version_s = unsafe { supp_data.__bindgen_anon_1.__bindgen_anon_1 };
-        println!(
-            "\tInfo: Supplemental data Major Version: {}",
-            version_s.major_version
-        );
-        println!(
-            "\tInfo: Supplemental data Minor Version: {}",
-            version_s.minor_version
-        );
-
-        // print SA list if it is a valid UTF-8 string
-
-        let sa_list = unsafe {
-            std::slice::from_raw_parts(
-                supp_data.sa_list.as_ptr() as *const u8,
-                mem::size_of_val(&supp_data.sa_list),
+    debug!("Verifying certificates signature...");
+    root_ca_cert
+        .verify_signature(Some(root_ca_cert.public_key()))
+        .map_err(|_| {
+            Error::VerificationFailure("The Intel Root CA is not self-signed".to_owned())
+        })?;
+    pck_ca_cert
+        .verify_signature(Some(root_ca_cert.public_key()))
+        .map_err(|_| {
+            Error::VerificationFailure(
+                "The Intel PCK CA cert is not signed by the Intel Root CA".to_owned(),
             )
-        };
-        if let Ok(s) = std::str::from_utf8(sa_list) {
-            println!("\tInfo: Advisory ID: {}", s);
-        }
+        })?;
+    pck_cert
+        .verify_signature(Some(pck_ca_cert.public_key()))
+        .map_err(|_| {
+            Error::VerificationFailure(
+                "The PCK cert is not signed by the Intel PCK CA cert".to_owned(),
+            )
+        })?;
+
+    debug!("Verifying certificates validity...");
+    if !root_ca_cert.validity().is_valid() {
+        return Err(Error::VerificationFailure(
+            "Intel Root CA certificate has expired".to_owned(),
+        ));
     }
+
+    if !pck_ca_cert.validity().is_valid() {
+        return Err(Error::VerificationFailure(
+            "Intel PCK CA certificate has expired".to_owned(),
+        ));
+    }
+
+    if !pck_cert.validity().is_valid() {
+        return Err(Error::VerificationFailure(
+            "Intel PCK certificate has expired".to_owned(),
+        ));
+    }
+
+    debug!("Verifying root ca crl");
+    verify_root_ca_crl(pccs_url, &root_ca_cert).await?;
+
+    debug!("Verifying pck crl");
+    verify_pck_cert_crl(pccs_url, &root_ca_cert, &pck_ca_cert).await?;
+
+    debug!("Verifying tcb info");
+    verify_tcb_info(
+        pccs_url,
+        &root_ca_cert,
+        &SgxPckExtension::from_pem_certificate_content(&chain[0])?,
+    )
+    .await?;
+
+    debug!("Verifying QE report signature");
+    let pck_pk = VerifyingKey::from_public_key_der(pck_cert.public_key().raw)?;
+    pck_pk.verify(
+        &raw_quote[QUOTE_QE_REPORT_OFFSET..QUOTE_QE_REPORT_SIZE + QUOTE_QE_REPORT_OFFSET],
+        &Signature::from_slice(qe_report_signature)?,
+    )?;
+
+    Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use env_logger::Target;
+pub(crate) fn verify_quote_signature(
+    raw_quote: &[u8],
+    auth_data: &AuthData,
+    signature: &EcdsaSigData,
+) -> Result<(), Error> {
+    let pubkey = [vec![0x04], signature.attest_pub_key.to_vec()].concat();
+    let pubkey = EncodedPoint::from_bytes(pubkey).map_err(|e| Error::CryptoError(e.to_string()))?;
+    let point = Option::from(AffinePoint::from_encoded_point(&pubkey)).ok_or_else(|| {
+        Error::CryptoError("Can't build an affine point from the provided public key".to_owned())
+    })?;
 
-    fn init() {
-        let mut builder = env_logger::builder();
-        let builder = builder.is_test(true);
-        let builder = builder.target(Target::Stdout);
-        let _ = builder.try_init();
+    let ecdsa_attestation_pk = VerifyingKey::from_affine(point)?;
+    ecdsa_attestation_pk.verify(
+        &raw_quote[..QUOTE_BODY_SIZE],
+        &Signature::from_slice(&signature.signature)?,
+    )?;
+
+    let mut pubkey_hash = Sha256::new();
+    pubkey_hash.update(signature.attest_pub_key);
+    pubkey_hash.update(&auth_data.auth_data);
+    let expected_qe_report_data = pubkey_hash.finalize()[..].to_vec();
+
+    if signature.qe_report.report_data[..32] != expected_qe_report_data {
+        return Err(Error::VerificationFailure(
+            "Unexpected REPORTDATA in QE report".to_owned(),
+        ));
     }
 
-    #[test]
-    fn test_verify_quote() {
-        init();
-        let quote = include_bytes!("../data/quote.dat");
-        qvl_ecdsa_quote_verify(&quote[..]);
+    Ok(())
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct TcbInfo {
+    version: u32,
+    id: String,
+    next_update: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct TcbInfoData {
+    tcb_info: TcbInfo,
+}
+
+pub(crate) async fn verify_tcb_info(
+    pccs_url: &str,
+    root_ca_cert: &X509Certificate<'_>,
+    sgx_pck_extension: &SgxPckExtension,
+) -> Result<(), Error> {
+    let url_str = format!("{pccs_url}/sgx/certification/v4/tcb");
+    let params = [("fmspc", hex::encode(sgx_pck_extension.fmspc))];
+    let url = reqwest::Url::parse_with_params(&url_str, &params)
+        .map_err(|e| Error::InvalidFormat(e.to_string()))?;
+    let rsp = get(url).await?;
+    let status = rsp.status();
+    let (headers, body) = (rsp.headers().clone(), rsp.text().await?);
+
+    if !status.is_success() {
+        return Err(Error::ResponseAPIError(format!(
+            "Request to {url_str} returns a {}: {:?}",
+            status, body,
+        )));
     }
+
+    let tcb_info: TcbInfoData = serde_json::from_str(&body)
+        .map_err(|_| Error::InvalidFormat("TCBInfo is malformed".to_owned()))?;
+
+    let chain = get_certificate_chain_from_pem(
+        urlencoding::decode(
+            headers
+                .get("TCB-Info-Issuer-Chain")
+                .ok_or_else(|| {
+                    Error::InvalidFormat("'TCB-Info-Issuer-Chain' header not found".to_owned())
+                })?
+                .to_str()
+                .map_err(|_| {
+                    Error::InvalidFormat(
+                        "Can't find 'TCB-Info-Issuer-Chain' in response header".to_owned(),
+                    )
+                })?,
+        )
+        .map_err(|_| Error::InvalidFormat("Can't decode 'TCB-Info-Issuer-Chain'".to_owned()))?
+        .as_bytes(),
+    )?;
+
+    if chain.len() != 2 {
+        return Err(Error::InvalidFormat(
+            "'TCB-Info-Issuer-Chain' header should contain exactly 2 certificates".to_owned(),
+        ));
+    }
+
+    let (_, tcb_cert) =
+        parse_x509_certificate(&chain[0]).map_err(|e| Error::X509ParserError(e.into()))?;
+
+    let (_, local_root_ca_cert) =
+        parse_x509_certificate(&chain[1]).map_err(|e| Error::X509ParserError(e.into()))?;
+
+    if root_ca_cert != &local_root_ca_cert {
+        return Err(Error::VerificationFailure(
+            "PCCS returned different Intel SGX Root CA".to_owned(),
+        ));
+    }
+
+    if tcb_info.tcb_info.version != 3 {
+        return Err(Error::VerificationFailure(format!(
+            "TCB version should be 3 (gets: {})",
+            tcb_info.tcb_info.version,
+        )));
+    }
+
+    if tcb_info.tcb_info.id != "SGX" {
+        return Err(Error::VerificationFailure(format!(
+            "TCB Id should be 'SGX' (gets: {})",
+            tcb_info.tcb_info.id,
+        )));
+    }
+
+    if Utc::now()
+        > NaiveDateTime::parse_from_str(&tcb_info.tcb_info.next_update, "%Y-%m-%dT%H:%M:%SZ")
+            .map_err(|e| Error::InvalidFormat(format!("Invalid date format: {e:?}")))?
+            .and_utc()
+    {
+        return Err(Error::VerificationFailure(format!(
+            "TCB update is in the past (gets: {})",
+            tcb_info.tcb_info.next_update,
+        )));
+    }
+
+    tcb_cert.verify_signature(Some(root_ca_cert.public_key()))?;
+
+    if !tcb_cert.validity().is_valid() {
+        return Err(Error::VerificationFailure(
+            "Intel TCB certificate has expired".to_owned(),
+        ));
+    }
+
+    Ok(())
+}
+
+pub(crate) fn get_certificate_chain_from_pem(data: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
+    let mut chain = Vec::new();
+    let mut pointer = data;
+
+    loop {
+        debug!("Reading certificate from {} bytes", pointer.len());
+        let (rem, pem) = parse_x509_pem(pointer)?;
+
+        if &pem.label != "CERTIFICATE" {
+            return Err(Error::InvalidFormat(
+                "Not a certificate or certificate is malformed".to_owned(),
+            ));
+        }
+
+        chain.push(pem.contents.clone());
+
+        if rem.is_empty() || rem[0] == 0 {
+            break;
+        }
+
+        pointer = rem;
+    }
+
+    Ok(chain)
+}
+
+pub(crate) async fn verify_root_ca_crl(
+    pccs_url: &str,
+    root_ca: &X509Certificate<'_>,
+) -> Result<(), Error> {
+    let url = format!("{pccs_url}/sgx/certification/v4/rootcacrl");
+    let rsp = get(&url).await?;
+    let status = rsp.status();
+    let body = rsp.bytes().await?;
+
+    if !status.is_success() {
+        return Err(Error::ResponseAPIError(format!(
+            "Request to  {url} returns a {}: {}",
+            status,
+            String::from_utf8_lossy(&body),
+        )));
+    }
+
+    let body = hex::decode(body).map_err(|e| Error::InvalidFormat(e.to_string()))?;
+
+    let (res, crl) =
+        CertificateRevocationList::from_der(&body).map_err(|e| Error::X509ParserError(e.into()))?;
+
+    if !res.is_empty() {
+        return Err(Error::InvalidFormat(
+            "Root CA CRL parsing failed".to_owned(),
+        ))?;
+    }
+
+    crl.verify_signature(root_ca.public_key())?;
+
+    let is_revoked = crl
+        .iter_revoked_certificates()
+        .find(|revoked| revoked.raw_serial() == root_ca.raw_serial());
+
+    if is_revoked.is_some() {
+        return Err(Error::VerificationFailure(
+            "Intel Root CA certificate is revoked".to_owned(),
+        ));
+    }
+
+    Ok(())
+}
+
+pub(crate) async fn verify_pck_cert_crl(
+    pccs_url: &str,
+    root_ca_cert: &X509Certificate<'_>,
+    pck_ca_cert: &X509Certificate<'_>,
+) -> Result<(), Error> {
+    // Determine the value of the 'ca' parameter
+    let ca = match pck_ca_cert.subject.iter_common_name().next() {
+        Some(attr) => {
+            let value = attr.attr_value().as_str()?;
+            if value == "Intel SGX PCK Platform CA" {
+                Ok("platform")
+            } else if value == "Intel SGX PCK Processor CA" {
+                Ok("processor")
+            } else {
+                Err(Error::InvalidFormat(
+                    "Unknown CN in Intel SGX PCK Platform/Processor CA".to_string(),
+                ))
+            }
+        }
+        None => Err(Error::InvalidFormat(
+            "Common name not found in pck ca cert".to_string(),
+        )),
+    }?;
+
+    // Get the CRL
+    let url_str = format!("{pccs_url}/sgx/certification/v4/pckcrl");
+    let params = [("ca", ca), ("encoding", "der")];
+    let url = reqwest::Url::parse_with_params(&url_str, &params)
+        .map_err(|e| Error::InvalidFormat(e.to_string()))?;
+    let rsp = get(url).await?;
+    let status = rsp.status();
+    let (headers, body) = (rsp.headers().clone(), rsp.bytes().await?);
+
+    if !status.is_success() {
+        return Err(Error::ResponseAPIError(format!(
+            "Request to  {url_str} returns a {}: {}",
+            status,
+            String::from_utf8_lossy(&body),
+        )));
+    }
+
+    let (res, crl) =
+        CertificateRevocationList::from_der(&body).map_err(|e| Error::X509ParserError(e.into()))?;
+
+    if !res.is_empty() {
+        return Err(Error::InvalidFormat("PCK CRL parsing failed".to_owned()))?;
+    }
+
+    crl.verify_signature(pck_ca_cert.public_key())
+        .map_err(|_| {
+            Error::VerificationFailure(
+                "The PCK crl is not signed by the Intel PCK CA cert".to_owned(),
+            )
+        })?;
+
+    let is_revoked = crl
+        .iter_revoked_certificates()
+        .find(|revoked| revoked.raw_serial() == pck_ca_cert.raw_serial());
+
+    if is_revoked.is_some() {
+        return Err(Error::VerificationFailure(
+            "Intel PCK CA certificate revoked".to_owned(),
+        ));
+    }
+
+    // Verify the content of the sgx-pck-crl-issuer-chain header
+    let chain = get_certificate_chain_from_pem(
+        urlencoding::decode(
+            headers
+                .get("sgx-pck-crl-issuer-chain")
+                .ok_or_else(|| {
+                    Error::InvalidFormat("(sgx-pck-crl-issuer-chain() header not found".to_owned())
+                })?
+                .to_str()
+                .map_err(|_| {
+                    Error::InvalidFormat(
+                        "Can't find 'sgx-pck-crl-issuer-chain' in response header".to_owned(),
+                    )
+                })?,
+        )
+        .map_err(|_| Error::InvalidFormat("Can't decode 'sgx-pck-crl-issuer-chain'".to_owned()))?
+        .as_bytes(),
+    )?;
+
+    if chain.len() != 2 {
+        return Err(Error::InvalidFormat(
+            "'sgx-pck-certificate-issuer-chain' header should contain exactly 2 certificates"
+                .to_owned(),
+        ));
+    }
+
+    let (_, local_root_ca_cert) =
+        parse_x509_certificate(&chain[1]).map_err(|e| Error::X509ParserError(e.into()))?;
+
+    let (_, local_pck_ca_cert) =
+        parse_x509_certificate(&chain[0]).map_err(|e| Error::X509ParserError(e.into()))?;
+
+    if root_ca_cert != &local_root_ca_cert {
+        return Err(Error::VerificationFailure(
+            "PCCS returned different Intel SGX Root CA".to_owned(),
+        ));
+    }
+
+    if pck_ca_cert != &local_pck_ca_cert {
+        return Err(Error::VerificationFailure(
+            "PCCS returned different Intel SGX PCK Platform/Processor CA".to_owned(),
+        ));
+    }
+
+    Ok(())
 }
