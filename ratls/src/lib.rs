@@ -105,12 +105,11 @@ pub async fn verify_ratls(
         }
         TeeType::Sgx => {
             let (quote, _, _, _) = sgx_quote::quote::parse_quote(&quote)?;
+
             verify_report_data(&quote.report_body.report_data[0..32], &ratls_cert)?;
 
             // Verify the quote itself
-            Ok(sgx_quote::quote::verify_quote(
-                &quote, mr_enclave, mr_signer,
-            )?)
+            Ok(sgx_quote::quote::verify_quote(&quote, mr_enclave, mr_signer).await?)
         }
     }
 }
