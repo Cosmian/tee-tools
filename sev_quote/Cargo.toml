@@ -14,14 +14,17 @@ asn1-rs = { workspace = true }
 asn1 = { workspace = true }
 bincode = { workspace = true }
 hex = { workspace = true }
+hkdf = "0.12"
 log = { workspace = true }
-openssl = { workspace = true }
+rand_chacha = { version = "0.3" }
 reqwest = { version = "0.11", features = ["json", "native-tls"] }
 serde = { version = "1.0", features = ["derive"] }
-sev = { version =  "1.2", features = ["openssl", "sev"] }
+sev = { version =  "1.2", features = ["openssl", "sev", "snp"] }
+sha2 = "0.10"
 thiserror = { workspace = true }
 uuid = { version = "1.3", features = ["serde", "v4"] }
 x509-parser = { workspace = true }
 
 [dev-dependencies]
 env_logger = "0.10"
+tokio = { version = "1.32", features = ["rt-multi-thread", "macros"] }

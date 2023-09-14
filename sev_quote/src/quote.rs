@@ -5,16 +5,10 @@ use crate::{
     snp_extension::{check_cert_ext_byte, check_cert_ext_bytes, SnpOid},
 };
 
-use asn1_rs::Oid;
+use asn1_rs::{FromDer, Oid};
 
 use log::debug;
-use openssl::{
-    ec::EcKey,
-    ecdsa::EcdsaSig,
-    pkey::Public,
-    sha::Sha384,
-    x509::{CrlStatus, X509Crl, X509},
-};
+
 use reqwest::get;
 use serde::{Deserialize, Serialize};
 use sev::{
@@ -33,6 +27,7 @@ use sev::{
 use uuid::Uuid;
 use x509_parser::{
     self, certificate::X509Certificate, pem::parse_x509_pem, prelude::X509Extension,
+    revocation_list::CertificateRevocationList,
 };
 
 const AWS_VLEK_TYPE: Uuid = Uuid::from_fields(
@@ -152,7 +147,7 @@ pub async fn verify_quote(
     verify_chain_certificates(&chain)?;
 
     // Check the quote has been signed by the VLEK/VCEK
-    verify_quote_signature(quote, &chain.vcek)?;
+    (&chain, quote).verify()?;
 
     // Check the revocation list
     verify_revocation_list(&chain).await?;
@@ -188,33 +183,66 @@ pub async fn verify_quote(
 /// Verify the certification chain against the AMD revocation list
 async fn verify_revocation_list(chain: &Chain) -> Result<(), Error> {
     // Get the crl
-    let crl = request_crl(SEV_PROD_NAME).await?;
+    let url = format!("{KDS_CERT_SITE}{KDS_VCEK}/{SEV_PROD_NAME}/{KDS_CRL}");
+    debug!("Requesting CRL from: {url}");
+
+    let rsp = get(&url).await?;
+    let status = rsp.status();
+    let body = rsp.bytes().await?;
+
+    if !status.is_success() {
+        return Err(Error::ResponseAPIError(format!(
+            "Request to  {url} returns a {}: {}",
+            status,
+            String::from_utf8_lossy(&body),
+        )));
+    }
+
+    let body = body.to_vec();
+    let (res, crl) =
+        CertificateRevocationList::from_der(&body).map_err(|e| Error::X509ParserError(e.into()))?;
+
+    if !res.is_empty() {
+        return Err(Error::InvalidFormat(
+            "Root CA CRL parsing failed".to_owned(),
+        ))?;
+    }
 
     // Verify that the crl has been signed by ARK
-    crl.verify(chain.ca.ark.public_key()?.as_ref())?;
+    let ark = chain.ca.ark.to_der()?;
+    let (_, cert) = X509Certificate::from_der(&ark)?;
+
+    // TODO: OID_PKCS1_RSASSAPSS signature algorithm is not supported
+    // crl.verify_signature(cert.public_key())?;
 
     // Verify ASK is not revoked
-    match crl.get_by_cert(&chain.ca.ask.clone().into()) {
-        CrlStatus::Revoked(_author_key_en) => {
-            return Err(Error::VerificationFailure(
-                "The ASK certificate has been revoked".to_owned(),
-            ))
-        }
-        _ => debug!("ASK is not revoked!"),
+    let is_revoked = crl
+        .iter_revoked_certificates()
+        .find(|revoked| revoked.raw_serial() == cert.raw_serial());
+
+    if is_revoked.is_some() {
+        return Err(Error::VerificationFailure(
+            "The ASK certificate has been revoked".to_owned(),
+        ));
     }
 
     // Verify VCEK is not revoked
-    match crl.get_by_cert(&chain.vcek.clone().into()) {
-        CrlStatus::Revoked(_author_key_en) => {
-            return Err(Error::VerificationFailure(
-                "The VCEK certificate has been revoked".to_owned(),
-            ))
-        }
-        _ => debug!("VCEK is not revoked!"),
+    let vcek = &chain.vcek.to_der()?;
+    let (_, cert) = X509Certificate::from_der(vcek)?;
+
+    let is_revoked = crl
+        .iter_revoked_certificates()
+        .find(|revoked| revoked.raw_serial() == cert.raw_serial());
+
+    if is_revoked.is_some() {
+        return Err(Error::VerificationFailure(
+            "The VCEK certificate has been revoked".to_owned(),
+        ));
     }
 
     Ok(())
 }
+
 /// Validate that the VLEK or VCEK certificate is signed by the AMD root of trust certificates
 fn verify_chain_certificates(cert_chain: &Chain) -> Result<(), Error> {
     let ark = &cert_chain.ca.ark;
@@ -244,27 +272,6 @@ fn verify_chain_certificates(cert_chain: &Chain) -> Result<(), Error> {
     }
 
     debug!("The VCEK was signed by the AMD ASK...");
-
-    Ok(())
-}
-
-/// Validate that the quote has been signed by the VCEK certificate
-fn verify_quote_signature(quote: &AttestationReport, vcek: &Certificate) -> Result<(), Error> {
-    let ar_signature: EcdsaSig = EcdsaSig::try_from(&quote.signature)?;
-    let signed_bytes: &[u8] =
-        &bincode::serialize(&quote).map_err(|_| Error::QuoteMalformed)?[0x0..0x2A0];
-    let amd_vcek_pubkey: EcKey<Public> = vcek.public_key()?.ec_key()?;
-    let mut hasher: Sha384 = Sha384::new();
-    hasher.update(signed_bytes);
-    let base_message_digest: [u8; 48] = hasher.finish();
-
-    if ar_signature.verify(&base_message_digest, &amd_vcek_pubkey)? {
-        debug!("VCEK signed the Attestation Report!");
-    } else {
-        return Err(Error::VerificationFailure(
-            "VCEK did NOT sign the Attestation Report!".to_owned(),
-        ));
-    }
 
     Ok(())
 }
@@ -363,14 +370,44 @@ async fn request_amd_cert_chain(url: &str) -> Result<ca::Chain, Error> {
         )));
     }
 
-    let body = body.to_vec();
-    let chain = X509::stack_from_pem(&body)?;
+    debug!("Extracting certificate chain...");
+    let chain = get_certificate_chain_from_pem(&body)?;
+
+    if chain.len() != 2 {
+        return Err(Error::InvalidFormat(format!(
+            "Unexpected certificate chain length {} ",
+            chain.len()
+        )));
+    }
 
     // Create a ca chain with ark and ask
-    Ok(ca::Chain::from_pem(
-        &chain[1].to_pem()?,
-        &chain[0].to_pem()?,
-    )?)
+    Ok(ca::Chain::from_der(&chain[1], &chain[0])?)
+}
+
+pub(crate) fn get_certificate_chain_from_pem(data: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
+    let mut chain = Vec::new();
+    let mut pointer = data;
+
+    loop {
+        debug!("Reading certificate from {} bytes", pointer.len());
+        let (rem, pem) = parse_x509_pem(pointer)?;
+
+        if &pem.label != "CERTIFICATE" {
+            return Err(Error::InvalidFormat(
+                "Not a certificate or certificate is malformed".to_owned(),
+            ));
+        }
+
+        chain.push(pem.contents.clone());
+
+        if rem.is_empty() || rem[0] == 0 {
+            break;
+        }
+
+        pointer = rem;
+    }
+
+    Ok(chain)
 }
 
 /// Requests the VCEK for the specified chip and TCP
@@ -402,23 +439,29 @@ pub async fn request_vcek(
     Ok(Certificate::from_der(&body)?)
 }
 
-/// Requests the revocation list
-pub async fn request_crl(sev_prod_name: &str) -> Result<X509Crl, Error> {
-    let url = format!("{KDS_CERT_SITE}{KDS_VCEK}/{sev_prod_name}/{KDS_CRL}");
-    debug!("Requesting CRL from: {url}\n");
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use env_logger::Target;
 
-    let rsp = get(&url).await?;
-    let status = rsp.status();
-    let body = rsp.bytes().await?;
-
-    if !status.is_success() {
-        return Err(Error::ResponseAPIError(format!(
-            "Request to  {url} returns a {}: {}",
-            status,
-            String::from_utf8_lossy(&body),
-        )));
+    fn init() {
+        let mut builder = env_logger::builder();
+        let builder = builder.is_test(true);
+        let builder = builder.target(Target::Stdout);
+        let _ = builder.try_init();
     }
 
-    let body = body.to_vec();
-    Ok(X509Crl::from_der(&body)?)
+    #[tokio::test]
+    async fn test_verify_quote() {
+        init();
+        let raw_report = include_bytes!("../data/report.bin");
+
+        let quote: SEVQuote = bincode::deserialize(raw_report)
+            .map_err(|_| Error::InvalidFormat("Can't deserialize the SEV report bytes".to_owned()))
+            .unwrap();
+
+        assert!(verify_quote(&quote.report, &quote.certs, None)
+            .await
+            .is_ok());
+    }
 }
