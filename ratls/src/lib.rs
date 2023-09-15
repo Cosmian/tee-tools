@@ -1,32 +1,45 @@
-use crate::error::Error;
 use asn1_rs::oid;
-use openssl::{
-    asn1::{Asn1Object, Asn1OctetString, Asn1Time},
-    bn::{BigNum, MsbOption},
-    ec::{EcGroup, EcKey},
-    nid::Nid,
-    pkey::{PKey, Private, Public},
-    sha::Sha256,
-    x509::{
-        extension::{BasicConstraints, SubjectAlternativeName},
-        X509Builder, X509Extension, X509,
-    },
-};
+use der::{asn1::Ia5String, pem::LineEnding, EncodePem};
+
+use p256::ecdsa::DerSignature;
+use rand::RngCore;
+use rand_chacha::rand_core::SeedableRng;
+use rand_chacha::ChaChaRng;
 use rustls::{
     client::ServerCertVerified,
     client::{ServerCertVerifier, ServerName},
     Certificate, Error as RustTLSError,
 };
 use sev_quote::{self, quote::SEVQuote};
+use sha2::{Digest, Sha256};
+use spki::SubjectPublicKeyInfoOwned;
+use std::{
+    convert::TryFrom,
+    io::Write,
+    net::{IpAddr, Ipv4Addr},
+    time::Duration,
+};
+use std::{str::FromStr, time::SystemTime};
 
-use std::time::SystemTime;
-use std::{io::Write, net::Ipv4Addr};
+use crate::{
+    error::Error,
+    extension::{AMDRatlsSExtension, IntelRatlsExtension, RatlsExtension},
+};
+use x509_cert::{
+    builder::{Builder, CertificateBuilder, Profile},
+    der::asn1::OctetString,
+    ext::pkix::{name::GeneralName, BasicConstraints, SubjectAltName},
+    name::Name,
+    serial_number::SerialNumber,
+    time::Validity,
+};
 use x509_parser::{
     oid_registry::Oid,
     prelude::{parse_x509_pem, X509Certificate},
 };
 
 pub mod error;
+pub mod extension;
 
 const SGX_RATLS_EXTENSION_OOID: Oid = oid!(1.2.840 .113741 .1337 .6);
 const SEV_RATLS_EXTENSION_OOID: Oid = oid!(1.2.840 .113741 .1337 .7); // TODO: find a proper value?
@@ -46,7 +59,7 @@ pub fn guess_tee() -> Result<TeeType, Error> {
         return Ok(TeeType::Sgx);
     }
 
-    Err(Error::InvalidPlatform)
+    Err(Error::UnsupportedTeeError)
 }
 
 /// Verify the RATLS certificate.
@@ -75,9 +88,9 @@ pub async fn verify_ratls(
         .map_err(|e| Error::X509ParserError(e.into()))?;
 
     // Get the quote from the certificate
-    let (quote, platform) = extract_quote(&ratls_cert)?;
+    let (quote, tee_type) = extract_quote(&ratls_cert)?;
 
-    match platform {
+    match tee_type {
         TeeType::Sev => {
             let quote: SEVQuote = bincode::deserialize(&quote).map_err(|_| {
                 Error::InvalidFormat("Can't deserialize the SEV quote bytes".to_owned())
@@ -106,8 +119,12 @@ pub async fn verify_ratls(
 /// Verify the first bytes of the report data
 /// It should be the fingerprint of the certificate public key (DER format)
 fn verify_report_data(report_data: &[u8], ratls_cert: &X509Certificate) -> Result<(), Error> {
+    let mut hasher = Sha256::new();
+
     let public_key = ratls_cert.public_key().raw;
-    let expected_digest = digest_ratls_public_key(public_key);
+    hasher.update(public_key);
+
+    let expected_digest = &hasher.finalize()[..];
 
     if report_data != expected_digest {
         return Err(Error::VerificationFailure(
@@ -136,13 +153,6 @@ fn extract_quote(ratls_cert: &X509Certificate) -> Result<(Vec<u8>, TeeType), Err
     ))
 }
 
-/// Compute the fingerprint of the ratls public key
-fn digest_ratls_public_key(ratls_public_key: &[u8]) -> [u8; 32] {
-    let mut pubkey_hash = Sha256::new();
-    pubkey_hash.update(ratls_public_key);
-    pubkey_hash.finish()
-}
-
 /// Generate the RATLS X509 extension containg the quote
 ///
 /// The quote report data contains the sha256 of the certificate public key
@@ -150,39 +160,36 @@ fn digest_ratls_public_key(ratls_public_key: &[u8]) -> [u8; 32] {
 pub fn get_ratls_extension(
     ratls_public_key: &[u8],
     extra_data: Option<[u8; 32]>,
-) -> Result<X509Extension, Error> {
+) -> Result<RatlsExtension, Error> {
+    let mut hasher = Sha256::new();
+
     // Hash the public key of the certificate
-    let pubkey_hash = digest_ratls_public_key(ratls_public_key);
+    hasher.update(ratls_public_key);
 
-    // Create the report data
-    let user_report_data = extra_data.map_or_else(
-        || pubkey_hash.to_vec(),
-        |extra_data| [pubkey_hash, extra_data].concat(),
-    );
+    let mut user_report_data = hasher.finalize()[..].to_vec();
 
-    // Generate the quote
-    let (quote, extension_ooid) = match guess_tee()? {
+    // Concat additional data if any
+    if let Some(extra_data) = extra_data {
+        user_report_data.extend(extra_data);
+    }
+
+    match guess_tee()? {
         TeeType::Sev => {
             let quote = sev_quote::quote::get_quote(&user_report_data)?;
-            (
-                bincode::serialize(&quote).map_err(|_| {
-                    Error::InvalidFormat("Can't serialize the SEV quote".to_owned())
-                })?,
-                SEV_RATLS_EXTENSION_OOID,
-            )
-        }
-        TeeType::Sgx => (
-            sgx_quote::quote::get_quote(&user_report_data)?,
-            SGX_RATLS_EXTENSION_OOID,
-        ),
-    };
+            let quote = bincode::serialize(&quote)
+                .map_err(|_| Error::InvalidFormat("Can't serialize the SEV quote".to_owned()))?;
 
-    // Create the custom RATLS extension X509
-    Ok(X509Extension::new_from_der(
-        Asn1Object::from_str(&extension_ooid.to_string())?.as_ref(),
-        false,
-        Asn1OctetString::new_from_bytes(&quote)?.as_ref(),
-    )?)
+            Ok(RatlsExtension::AMDTee(AMDRatlsSExtension::from(
+                OctetString::new(&quote[..]).map_err(|_| Error::UnsupportedTeeError)?,
+            )))
+        }
+        TeeType::Sgx => {
+            let quote = sgx_quote::quote::get_quote(&user_report_data)?;
+            Ok(RatlsExtension::IntelTee(IntelRatlsExtension::from(
+                OctetString::new(&quote[..]).map_err(|_| Error::UnsupportedTeeError)?,
+            )))
+        }
+    }
 }
 
 /// Generate a ratls certificate
@@ -190,82 +197,82 @@ pub fn get_ratls_extension(
 /// The RATLS certificate contains the sgx quote
 #[allow(clippy::too_many_arguments)]
 pub fn generate_ratls_cert(
-    country: Option<&str>,
-    state: Option<&str>,
-    city: Option<&str>,
-    organization: Option<&str>,
-    common_name: Option<&str>,
+    issuer: &str,
+    subject: &str,
     subject_alternative_names: Vec<&str>,
-    days_before_expiration: u32,
+    days_before_expiration: u64,
     quote_extra_data: Option<[u8; 32]>,
-) -> Result<(PKey<Private>, X509), Error> {
-    let nid = Nid::X9_62_PRIME256V1; // NIST P-256 curve
-    let group = EcGroup::from_curve_name(nid)?;
-    let ec_key = EcKey::generate(&group)?;
-    let public_ec_key = ec_key.public_key_to_der()?;
+) -> Result<(String, String), Error> {
+    let mut csrng = ChaChaRng::from_entropy();
 
-    // We need to convert these keys to PKey objects to use in certificates
-    let private_key = PKey::from_ec_key(ec_key)?;
-    let public_key = PKey::<Public>::public_key_from_der(&public_ec_key)?;
+    let serial_number = SerialNumber::from(csrng.next_u32());
+    let validity = Validity::from_now(Duration::new(days_before_expiration * 24 * 60 * 60, 0))
+        .map_err(|_| Error::RatlsError("unexpected expiration validity".to_owned()))?;
+    let issuer =
+        Name::from_str(issuer).map_err(|_| Error::RatlsError("can't parse issuer".to_owned()))?;
+    let subject =
+        Name::from_str(subject).map_err(|_| Error::RatlsError("can't parse subject".to_owned()))?;
 
-    // Prepare certificate attributes
-    let serial_number = {
-        let mut serial = BigNum::new()?;
-        serial.rand(159, MsbOption::MAYBE_ZERO, false)?;
-        serial.to_asn1_integer()?
-    };
-    let not_before = Asn1Time::days_from_now(0)?;
-    let not_after = Asn1Time::days_from_now(days_before_expiration)?;
-    let mut x509_name = openssl::x509::X509NameBuilder::new()?;
-    if let Some(country) = country {
-        x509_name.append_entry_by_text("C", country)?;
-    }
-    if let Some(state) = state {
-        x509_name.append_entry_by_text("ST", state)?;
-    }
-    if let Some(city) = city {
-        x509_name.append_entry_by_text("L", city)?;
-    }
-    if let Some(organization) = organization {
-        x509_name.append_entry_by_text("O", organization)?;
-    }
-    if let Some(common_name) = common_name {
-        x509_name.append_entry_by_text("CN", common_name)?;
-    }
-    let x509_name = x509_name.build();
-
-    let alternative_name = {
-        let mut alt_name = SubjectAlternativeName::new();
-        for san in subject_alternative_names {
-            match san.parse::<Ipv4Addr>() {
-                Ok(_) => alt_name.ip(san),
-                Err(_) => alt_name.dns(san),
-            };
-        }
-        alt_name
+    let profile = Profile::Leaf {
+        issuer: issuer.clone(),
+        enable_key_agreement: false,
+        enable_key_encipherment: false,
+        #[cfg(feature = "hazmat")]
+        include_subject_key_identifier: true,
     };
 
-    // Create a new X509 builder.
-    let mut builder = X509Builder::new()?;
-    builder.set_serial_number(&serial_number)?;
-    builder.set_pubkey(&public_key)?;
-    builder.set_not_after(&not_after)?;
-    builder.set_not_before(&not_before)?;
-    builder.set_subject_name(&x509_name)?;
-    builder.set_issuer_name(&x509_name)?;
+    let secret_key = p256::SecretKey::random(&mut csrng);
+    let pem_sk = secret_key
+        .clone()
+        .to_sec1_pem(LineEnding::LF)
+        .map_err(|_| Error::RatlsError("can't convert secret key to PEM".to_owned()))?
+        .to_string();
+    let signer = p256::ecdsa::SigningKey::from(secret_key);
+    let pk_info = SubjectPublicKeyInfoOwned::try_from(&signer.to_bytes()[..]).map_err(|_| {
+        Error::RatlsError("can't create SubjectPublicKeyInfo from public key".to_owned())
+    })?;
+    let mut builder =
+        CertificateBuilder::new(profile, serial_number, validity, subject, pk_info, &signer)
+            .map_err(|_| Error::RatlsError("failed to create certificate builder".to_owned()))?;
 
-    // Set the TLS extensions
-    builder.set_version(2)?;
-    builder.append_extension(alternative_name.build(&builder.x509v3_context(None, None))?)?;
-    builder.append_extension(BasicConstraints::new().ca().critical().build()?)?;
-    builder.append_extension(get_ratls_extension(&public_ec_key, quote_extra_data)?)?;
+    match get_ratls_extension(&signer.verifying_key().to_sec1_bytes(), quote_extra_data)? {
+        RatlsExtension::AMDTee(amd_ext) => builder
+            .add_extension(&amd_ext)
+            .map_err(|_| Error::RatlsError("can't create RA-TLS AMD extension".to_owned()))?,
+        RatlsExtension::IntelTee(intel_ext) => builder
+            .add_extension(&intel_ext)
+            .map_err(|_| Error::RatlsError("can't create RA-TLS Intel extension".to_owned()))?,
+    };
 
-    builder.sign(&private_key, openssl::hash::MessageDigest::sha256())?;
+    let subject_alternative_names = subject_alternative_names
+        .iter()
+        .map(|san| match san.parse::<Ipv4Addr>() {
+            Ok(ip) => GeneralName::from(IpAddr::V4(ip)),
+            Err(_) => GeneralName::DnsName(
+                Ia5String::try_from(san.to_string()).expect("SAN contains non-ascii characters"),
+            ),
+        })
+        .collect::<Vec<GeneralName>>();
 
-    // now build the certificate
-    let cert = builder.build();
+    builder
+        .add_extension(&SubjectAltName(subject_alternative_names))
+        .map_err(|_| Error::RatlsError("can't create SAN extension".to_owned()))?;
 
-    Ok((private_key, cert))
+    builder
+        .add_extension(&BasicConstraints {
+            ca: true,
+            path_len_constraint: None,
+        })
+        .map_err(|_| Error::RatlsError("failed to add basic constraint CA:true".to_owned()))?;
+
+    let certificate = builder
+        .build::<DerSignature>()
+        .map_err(|_| Error::RatlsError("can't build RA-TLS certificate".to_owned()))?;
+    let pem_cert = certificate
+        .to_pem(LineEnding::LF)
+        .map_err(|_| Error::RatlsError("failed to convert certificate to PEM".to_owned()))?;
+
+    Ok((pem_sk, pem_cert))
 }
 
 pub struct NoVerifier;
@@ -284,11 +291,11 @@ impl ServerCertVerifier for NoVerifier {
     }
 }
 
-/// Get the RATLS certificate from a `domain`:`port`
-pub fn get_server_certificate(domain: &str, port: u32) -> Result<Vec<u8>, Error> {
+/// Get the RATLS certificate from a `host`:`port`
+pub fn get_server_certificate(host: &str, port: u32) -> Result<Vec<u8>, Error> {
     let root_store = rustls::RootCertStore::empty();
 
-    let mut socket = std::net::TcpStream::connect(format!("{domain}:{port}"))
+    let mut socket = std::net::TcpStream::connect(format!("{host}:{port}"))
         .map_err(|_| Error::ConnectionError)?;
 
     let mut config = rustls::ClientConfig::builder()
@@ -300,7 +307,7 @@ pub fn get_server_certificate(domain: &str, port: u32) -> Result<Vec<u8>, Error>
         .set_certificate_verifier(std::sync::Arc::new(NoVerifier));
 
     let rc_config = std::sync::Arc::new(config);
-    let dns_name = domain.try_into().map_err(|_| Error::DNSNameError)?;
+    let dns_name = host.try_into().map_err(|_| Error::DNSNameError)?;
 
     let mut client =
         rustls::ClientConnection::new(rc_config, dns_name).map_err(|_| Error::ConnectionError)?;

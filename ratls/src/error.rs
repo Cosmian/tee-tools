@@ -4,12 +4,12 @@ use thiserror::Error;
 pub enum Error {
     #[error("ConnectionError")]
     ConnectionError,
-    #[error(transparent)]
-    CryptoError(#[from] openssl::error::ErrorStack),
     #[error("DNSNameError")]
     DNSNameError,
-    #[error("Can't guess the current platform type")]
-    InvalidPlatform,
+    #[error("Unsupported TEE type")]
+    UnsupportedTeeError,
+    #[error("Unsupported TEE type")]
+    Asn1Error,
     #[error(transparent)]
     IOError(#[from] std::io::Error),
     #[error("{0}")]
@@ -20,8 +20,10 @@ pub enum Error {
     SEVQuoteError(#[from] sev_quote::error::Error),
     #[error(transparent)]
     SGXQuoteError(#[from] sgx_quote::error::Error),
-    #[error("{0}")]
+    #[error("VerificationFailure: {0}")]
     VerificationFailure(String),
+    #[error("RatlsError: {0}")]
+    RatlsError(String),
     #[error(transparent)]
     X509PemParserError(#[from] x509_parser::nom::Err<x509_parser::error::PEMError>),
     #[error(transparent)]
