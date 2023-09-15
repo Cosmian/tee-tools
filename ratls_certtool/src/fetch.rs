@@ -2,7 +2,6 @@ use std::{fs, path::PathBuf};
 
 use anyhow::Result;
 use clap::Args;
-use openssl::x509::X509;
 use ratls::get_server_certificate;
 
 /// Fetch an RATLS certificate from a domain name
@@ -24,12 +23,11 @@ pub struct FetchArgs {
 impl FetchArgs {
     pub fn run(&self) -> Result<()> {
         let cert = get_server_certificate(&self.hostname, self.port)?;
-        let certificat = X509::from_der(&cert)?;
 
         let cert_path = self.output.join(PathBuf::from("cert.ratls.pem"));
 
         fs::create_dir_all(&self.output)?;
-        fs::write(&cert_path, certificat.to_pem()?)?;
+        fs::write(&cert_path, cert)?;
 
         println!("RATLS certificate: {cert_path:?}");
 
