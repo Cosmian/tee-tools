@@ -1,4 +1,3 @@
-use asn1_rs::oid;
 use der::{asn1::Ia5String, pem::LineEnding, EncodePem};
 
 use p256::ecdsa::DerSignature;
@@ -23,7 +22,10 @@ use std::{str::FromStr, time::SystemTime};
 
 use crate::{
     error::Error,
-    extension::{AMDRatlsSExtension, IntelRatlsExtension, RatlsExtension},
+    extension::{
+        AMDRatlsSExtension, IntelRatlsExtension, RatlsExtension, AMD_RATLS_EXTENSION_OID,
+        INTEL_RATLS_EXTENSION_OID,
+    },
 };
 use x509_cert::{
     builder::{Builder, CertificateBuilder, Profile},
@@ -40,9 +42,6 @@ use x509_parser::{
 
 pub mod error;
 pub mod extension;
-
-const SGX_RATLS_EXTENSION_OOID: Oid = oid!(1.2.840 .113741 .1337 .6);
-const SEV_RATLS_EXTENSION_OOID: Oid = oid!(1.2.840 .113741 .1337 .7); // TODO: find a proper value?
 
 pub enum TeeType {
     Sgx,
@@ -137,13 +136,16 @@ fn verify_report_data(report_data: &[u8], ratls_cert: &X509Certificate) -> Resul
 
 /// Extract the quote from an RATLS certificate
 fn extract_quote(ratls_cert: &X509Certificate) -> Result<(Vec<u8>, TeeType), Error> {
+    let intel_ext_oid = Oid::from_str(INTEL_RATLS_EXTENSION_OID).map_err(|_| Error::Asn1Error)?;
+    let amd_ext_oid = Oid::from_str(AMD_RATLS_EXTENSION_OID).map_err(|_| Error::Asn1Error)?;
+
     // Try to extract SGX quote
-    if let Some(quote) = ratls_cert.get_extension_unique(&SGX_RATLS_EXTENSION_OOID)? {
+    if let Some(quote) = ratls_cert.get_extension_unique(&intel_ext_oid)? {
         return Ok((quote.value.to_vec(), TeeType::Sgx));
     }
 
     // Try to extract SEV quote
-    if let Some(quote) = ratls_cert.get_extension_unique(&SEV_RATLS_EXTENSION_OOID)? {
+    if let Some(quote) = ratls_cert.get_extension_unique(&amd_ext_oid)? {
         return Ok((quote.value.to_vec(), TeeType::Sev));
     }
 

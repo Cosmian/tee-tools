@@ -11,16 +11,13 @@ pub enum RatlsExtension {
     AMDTee(AMDRatlsSExtension),
 }
 
-pub const INTEL_RATLS_EXTENSION_OID: ObjectIdentifier =
-    ObjectIdentifier::new_unwrap("1.2.840.113741.1337.6");
-
-pub const AMD_RATLS_EXTENSION_OID: ObjectIdentifier =
-    ObjectIdentifier::new_unwrap("1.2.840.113741.1337.6");
+pub const INTEL_RATLS_EXTENSION_OID: &str = "1.2.840.113741.1337.6";
+pub const AMD_RATLS_EXTENSION_OID: &str = "1.2.840.113741.1337.7";
 
 pub struct IntelRatlsExtension(OctetString);
 
 impl AssociatedOid for IntelRatlsExtension {
-    const OID: ObjectIdentifier = INTEL_RATLS_EXTENSION_OID;
+    const OID: ObjectIdentifier = ObjectIdentifier::new_unwrap(INTEL_RATLS_EXTENSION_OID);
 }
 
 impl_newtype!(IntelRatlsExtension, OctetString);
@@ -50,7 +47,7 @@ impl AsExtension for IntelRatlsExtension {
 pub struct AMDRatlsSExtension(OctetString);
 
 impl AssociatedOid for AMDRatlsSExtension {
-    const OID: ObjectIdentifier = AMD_RATLS_EXTENSION_OID;
+    const OID: ObjectIdentifier = ObjectIdentifier::new_unwrap(AMD_RATLS_EXTENSION_OID);
 }
 
 impl_newtype!(AMDRatlsSExtension, OctetString);
