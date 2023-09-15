@@ -25,7 +25,7 @@ pub fn get_key(use_salt: bool) -> Result<Vec<u8>, Error> {
         Hkdf::<Sha256>::new(None, &derived_key)
     };
 
-    hk.expand(b"sev-vm-sealing-key", &mut k)
+    hk.expand(b"amd-sealing-key", &mut k)
         .map_err(|e| Error::CryptoError(format!("Invalid length for HKDF {e:?}")))?;
 
     Ok(k.to_vec())
