@@ -1,12 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-    "ratls",   
+    "ratls",
     "rafs_tool",
     "ratls_certtool",
     "sev_quote",
     "sgx_quote",
-    "sgx_pck_extension"
+    "sgx_pck_extension",
 ]
 
 [workspace.dependencies]
