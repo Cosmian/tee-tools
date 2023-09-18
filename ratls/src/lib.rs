@@ -87,11 +87,11 @@ pub fn verify_ratls(
         .map_err(|e| Error::X509ParserError(e.into()))?;
 
     // Get the quote from the certificate
-    let (quote, tee_type) = extract_quote(&ratls_cert)?;
+    let (raw_quote, tee_type) = extract_quote(&ratls_cert)?;
 
     match tee_type {
         TeeType::Sev => {
-            let quote: SEVQuote = bincode::deserialize(&quote).map_err(|_| {
+            let quote: SEVQuote = bincode::deserialize(&raw_quote).map_err(|_| {
                 Error::InvalidFormat("Can't deserialize the SEV quote bytes".to_owned())
             })?;
 
@@ -105,13 +105,13 @@ pub fn verify_ratls(
             )?)
         }
         TeeType::Sgx => {
-            let (quote, _, _, _) = sgx_quote::quote::parse_quote(&quote)?;
+            let (quote, _, _, _) = sgx_quote::quote::parse_quote(&raw_quote)?;
 
             verify_report_data(&quote.report_body.report_data[0..32], &ratls_cert)?;
 
             // Verify the quote itself
             Ok(sgx_quote::quote::verify_quote(
-                &quote, mr_enclave, mr_signer,
+                &raw_quote, mr_enclave, mr_signer,
             )?)
         }
     }

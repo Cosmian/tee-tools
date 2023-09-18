@@ -100,7 +100,7 @@ pub(crate) fn verify_pck_chain_and_tcb(
     debug!("Verifying QE report signature");
     let pck_pk = VerifyingKey::from_public_key_der(pck_cert.public_key().raw)?;
     pck_pk.verify(
-        &raw_quote
+        raw_quote
             .get(QUOTE_QE_REPORT_OFFSET..QUOTE_QE_REPORT_SIZE + QUOTE_QE_REPORT_OFFSET)
             .ok_or_else(|| {
                 Error::InvalidFormat(
