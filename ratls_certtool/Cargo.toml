@@ -11,11 +11,18 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
-clap = { version = "4", default-features = false, features = ["cargo", "derive", "error-context", "help", "std", "string",  "usage" ] }
+clap = { version = "4", default-features = false, features = [
+    "cargo",
+    "derive",
+    "error-context",
+    "help",
+    "std",
+    "string",
+    "usage",
+] }
 curve25519-dalek = { workspace = true }
 hex = { workspace = true }
 ratls = { path = "../ratls" }
 sev_quote = { path = "../sev_quote" }
 sgx_quote = { path = "../sgx_quote" }
-tokio = { version = "1.32", features = ["rt-multi-thread", "macros"] }
 x509-parser = { workspace = true }

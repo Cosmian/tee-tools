@@ -111,25 +111,32 @@ impl SgxPckExtension {
     pub fn from_pem_certificate(
         pem_certificate: &[u8],
     ) -> Result<SgxPckExtension, SgxPckExtensionError> {
-        let sgx_extension_oid =
-            Oid::from_str(&SGX_EXTENSIONS_OID.to_string()).expect("Bad SGX extension OID");
         match parse_x509_pem(pem_certificate) {
             Ok((rem, pem)) if !rem.is_empty() || pem.label.as_str() != "CERTIFICATE" => {
                 Err(SgxPckExtensionError::PEMParsingError)
             }
-            Ok((_, pem)) => match parse_x509_certificate(&pem.contents) {
-                Ok((rem, _)) if !rem.is_empty() => Err(SgxPckExtensionError::X509ParsingError),
-                Ok((_, x509)) => match x509.get_extension_unique(&sgx_extension_oid) {
-                    Ok(Some(sgx_extension)) => SgxPckExtension::from_der(sgx_extension.value)
-                        .map_err(|_| SgxPckExtensionError::SgxPckParsingError),
-                    Ok(None) => Err(SgxPckExtensionError::SgxPckExtensionNotFoundError),
-                    Err(e) => {
-                        panic!("Failed to get X509 extension: {:?}", e)
-                    }
-                },
-                Err(_) => Err(SgxPckExtensionError::SgxPckParsingError),
-            },
+            Ok((_, pem)) => SgxPckExtension::from_pem_certificate_content(&pem.contents),
             Err(_) => Err(SgxPckExtensionError::PEMParsingError),
+        }
+    }
+
+    pub fn from_pem_certificate_content(
+        decoded_pem: &[u8],
+    ) -> Result<SgxPckExtension, SgxPckExtensionError> {
+        let sgx_extension_oid =
+            Oid::from_str(&SGX_EXTENSIONS_OID.to_string()).expect("Bad SGX extension OID");
+
+        match parse_x509_certificate(decoded_pem) {
+            Ok((rem, _)) if !rem.is_empty() => Err(SgxPckExtensionError::X509ParsingError),
+            Ok((_, x509)) => match x509.get_extension_unique(&sgx_extension_oid) {
+                Ok(Some(sgx_extension)) => SgxPckExtension::from_der(sgx_extension.value)
+                    .map_err(|_| SgxPckExtensionError::SgxPckParsingError),
+                Ok(None) => Err(SgxPckExtensionError::SgxPckExtensionNotFoundError),
+                Err(e) => {
+                    panic!("Failed to get X509 extension: {:?}", e)
+                }
+            },
+            Err(_) => Err(SgxPckExtensionError::SgxPckParsingError),
         }
     }
 }

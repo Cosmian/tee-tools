@@ -1,19 +1,18 @@
 use crate::error::Error;
-
-use openssl::rsa::Rsa;
-use openssl::sha::Sha256;
+use rsa::{pkcs8::DecodePublicKey, traits::PublicKeyParts, RsaPublicKey};
+use sha2::{Digest, Sha256};
 
 /// Compute the `MR_SIGNER` from the public enclave certificate (PEM format)
-pub fn compute_mr_signer(pem_public_enclave_cert: &str) -> Result<[u8; 32], Error> {
-    let public_key = Rsa::public_key_from_pem(pem_public_enclave_cert.as_bytes())?;
+pub fn compute_mr_signer(pem_public_enclave_cert: &str) -> Result<Vec<u8>, Error> {
+    let public_key = RsaPublicKey::from_public_key_pem(pem_public_enclave_cert)?;
 
     let modulus = public_key.n();
-    let mut modulus_bytes = modulus.to_vec();
+    let mut modulus_bytes = modulus.to_bytes_be();
     modulus_bytes.reverse();
 
     let mut hash = Sha256::new();
     hash.update(&modulus_bytes);
-    Ok(hash.finish())
+    Ok(hash.finalize()[..].to_vec())
 }
 
 #[cfg(test)]

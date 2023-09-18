@@ -1,17 +1,28 @@
 use crate::error::Error;
+use crate::verify::{verify_pck_chain_and_tcb, verify_quote_signature};
 
 use core::fmt;
 use log::debug;
+
 use scroll::Pread;
+
 use std::{fs, io::Read};
 
 pub const QUOTE_HEADER_SIZE: usize = 48;
 pub const QUOTE_REPORT_BODY_SIZE: usize = 384;
 pub const QUOTE_BODY_SIZE: usize = QUOTE_HEADER_SIZE + QUOTE_REPORT_BODY_SIZE;
 pub const QUOTE_ECDSA_SIG_DATA_SIZE: usize = 576;
+pub const QUOTE_AUTH_DATA_OFFSET: usize = QUOTE_BODY_SIZE + 4;
+pub const QUOTE_QE_REPORT_OFFSET: usize = QUOTE_AUTH_DATA_OFFSET + 128;
+pub const QUOTE_QE_REPORT_SIZE: usize = 384;
+
+pub const MRENCLAVE_SIZE: usize = 32;
+pub const MRSIGNER_SIZE: usize = 32;
 
 const REPORT_DATA_SIZE: usize = 64;
 const QUOTE_MAX_SIZE: usize = 8192;
+
+const PCCS_URL: &str = "https://pccs.staging.mse.cosmian.com";
 
 /// Header of Quote data structure (48 bytes).
 /// See [sgx_quote_3.h#L165](https://github.com/intel/SGXDataCenterAttestationPrimitives/blob/DCAP_1.16/QuoteGeneration/quote_wrapper/common/inc/sgx_quote_3.h#L165).
@@ -219,11 +230,14 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>, Error> {
 /// - The MRsigner
 /// - The quote collaterals
 pub fn verify_quote(
-    quote: &Quote,
-    mr_enclave: Option<[u8; 32]>,
-    mr_signer: Option<[u8; 32]>,
+    raw_quote: &[u8],
+    mr_enclave: Option<[u8; MRENCLAVE_SIZE]>,
+    mr_signer: Option<[u8; MRSIGNER_SIZE]>,
 ) -> Result<(), Error> {
-    // Check the mr enclave
+    let (quote, signature, auth_data, certs) = parse_quote(raw_quote)?;
+
+    // Check the MRENCLAVE
+    debug!("Checking MRENCLAVE");
     if let Some(mr_enclave) = mr_enclave {
         if quote.report_body.mr_enclave != mr_enclave {
             return Err(Error::VerificationFailure(
@@ -232,7 +246,8 @@ pub fn verify_quote(
         }
     }
 
-    // Check the mr signer
+    // Check the MRSIGNER
+    debug!("Checking MRSIGNER");
     if let Some(mr_signer) = mr_signer {
         if quote.report_body.mr_signer != mr_signer {
             return Err(Error::VerificationFailure(
@@ -241,77 +256,19 @@ pub fn verify_quote(
         }
     }
 
-    // Check the collaterals
-    // TODO
+    // Verify pck chain and tcb
+    verify_pck_chain_and_tcb(
+        raw_quote,
+        &certs.certification_data,
+        &signature.qe_report_signature,
+        PCCS_URL,
+    )?;
+
+    debug!("Verifying quote signature");
+    verify_quote_signature(raw_quote, &auth_data, &signature)?;
+
+    debug!("Verification succeed");
     Ok(())
-}
-
-pub fn parse_quote_header(raw_quote: &[u8]) -> Result<QuoteHeader, Error> {
-    raw_quote
-        .pread_with::<QuoteHeader>(0, scroll::LE)
-        .map_err(|e| Error::InvalidFormat(format!("Parse quote header failed: {e:?}")))
-}
-
-pub fn parse_report_body(raw_quote: &[u8]) -> Result<ReportBody, Error> {
-    raw_quote
-        .pread_with::<ReportBody>(QUOTE_HEADER_SIZE, scroll::LE)
-        .map_err(|e| Error::InvalidFormat(format!("Parse report body failed: {e:?}")))
-}
-
-pub fn parse_quote_body(raw_quote: &[u8]) -> Result<Quote, Error> {
-    Ok(Quote {
-        header: parse_quote_header(raw_quote)?,
-        report_body: parse_report_body(raw_quote)?,
-    })
-}
-
-pub fn parse_ecdsa_sig_data(raw_quote: &[u8]) -> Result<EcdsaSigData, Error> {
-    raw_quote
-        // shift 4 bytes for the signature_data_len (u32)
-        .pread_with::<EcdsaSigData>(QUOTE_BODY_SIZE + 4, scroll::LE)
-        .map_err(|e| Error::InvalidFormat(format!("Parse auth data failed: {e:?}")))
-}
-
-pub fn parse_auth_and_cert(raw_quote: &[u8]) -> Result<(AuthData, CertificationData), Error> {
-    let offset = &mut (QUOTE_BODY_SIZE + 4 + QUOTE_ECDSA_SIG_DATA_SIZE);
-    let qe_auth_data_len = raw_quote
-        .gread_with::<u16>(offset, scroll::LE)
-        .map_err(|e| Error::InvalidFormat(format!("Parse QE auth data length failed: {e:?}")))?;
-    let mut qe_auth_data: Vec<u8> = vec![0; qe_auth_data_len as usize];
-    raw_quote.gread_inout(offset, &mut qe_auth_data)?;
-    assert!(
-        qe_auth_data.len() == qe_auth_data_len as usize,
-        "unexpected qe_auth_data_len"
-    );
-
-    let certification_data_type = raw_quote
-        .gread_with::<u16>(offset, scroll::LE)
-        .map_err(|e| {
-            Error::InvalidFormat(format!("Parse certification data type failed: {e:?}"))
-        })?;
-    debug!("certification_data_type: {}", certification_data_type);
-
-    let certification_data_len = raw_quote
-        .gread_with::<u32>(offset, scroll::LE)
-        .map_err(|e| {
-            Error::InvalidFormat(format!("Parse certification data length failed: {e:?}"))
-        })?;
-    let mut certification_data: Vec<u8> = vec![0; certification_data_len as usize];
-    raw_quote.gread_inout(offset, &mut certification_data)?;
-    assert!(
-        certification_data.len() == certification_data_len as usize,
-        "unexpected certification_data_len"
-    );
-
-    Ok((
-        AuthData {
-            auth_data: qe_auth_data,
-        },
-        CertificationData {
-            cert_key_type: certification_data_type,
-            certification_data,
-        },
-    ))
 }
 
 pub fn parse_quote(
@@ -405,5 +362,12 @@ mod tests {
         let raw_quote = include_bytes!("../data/quote.dat");
         let (_quote, _ecdsa_sig_data, _auth_data, _certification_data) =
             parse_quote(raw_quote).unwrap();
+    }
+
+    #[test]
+    fn test_verify_quote() {
+        init();
+        let raw_quote = include_bytes!("../data/quote.dat");
+        assert!(verify_quote(raw_quote, None, None).is_ok());
     }
 }

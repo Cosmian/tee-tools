@@ -27,14 +27,13 @@ enum CliCommands {
     Decrypt(DecryptArgs),
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let opts = Cli::parse();
 
     match opts.command {
         CliCommands::Init(args) => args.run(),
         CliCommands::Proxy(args) => args.run(),
-        CliCommands::Encrypt(args) => args.run().await,
+        CliCommands::Encrypt(args) => args.run(),
         CliCommands::Decrypt(args) => args.run(),
     }?;
 

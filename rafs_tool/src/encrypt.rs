@@ -37,7 +37,7 @@ pub struct EncryptArgs {
 }
 
 impl EncryptArgs {
-    pub async fn run(&self) -> Result<()> {
+    pub fn run(&self) -> Result<()> {
         // Step 1: Generate the bi-key for the ECDH
         let group = EcGroup::from_curve_name(CURVE_NAME)?;
         let private_key = EcKey::generate(&group)?;
@@ -51,7 +51,7 @@ impl EncryptArgs {
         };
 
         let quote: SEVQuote = bincode::deserialize(&fs::read(&self.quote)?)?;
-        verify_quote(&quote.report, &quote.certs, sev_measurement).await?;
+        verify_quote(&quote.report, &quote.certs, sev_measurement)?;
 
         if quote.report.report_data[0..QUOTE_FINGERPRINT_SIZE]
             != sha256(&peer_public_key.public_key_to_der()?)

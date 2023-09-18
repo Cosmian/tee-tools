@@ -7,15 +7,26 @@ description = "Intel SGX quote parsing and verification"
 
 [lib]
 name = "sgx_quote"
-crate-type = ["cdylib","rlib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+chrono = "0.4"
+elliptic-curve = { workspace = true }
 hex = { workspace = true }
-intel-tee-quote-verification-rs = "0.2"
+hkdf = { workspace = true }
 log = { workspace = true }
-openssl = { workspace = true }
+p256 = { workspace = true }
+rand_chacha = { workspace = true }
+reqwest = { workspace = true }
+rsa = { workspace = true }
 scroll = { version = "0.11", features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sgx_pck_extension = { path = "../sgx_pck_extension" }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
+urlencoding = "2.1"
+x509-parser = { workspace = true, features = ["verify"] }
 
 [dev-dependencies]
 env_logger = "0.10"

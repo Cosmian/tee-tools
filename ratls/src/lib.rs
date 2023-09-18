@@ -68,7 +68,7 @@ pub fn guess_tee() -> Result<TeeType, Error> {
 /// - The MRsigner
 /// - The report data content
 /// - The quote collaterals
-pub async fn verify_ratls(
+pub fn verify_ratls(
     pem_ratls_cert: &[u8],
     sev_measurement: Option<[u8; 48]>,
     mr_enclave: Option<[u8; 32]>,
@@ -87,29 +87,31 @@ pub async fn verify_ratls(
         .map_err(|e| Error::X509ParserError(e.into()))?;
 
     // Get the quote from the certificate
-    let (quote, tee_type) = extract_quote(&ratls_cert)?;
+    let (raw_quote, tee_type) = extract_quote(&ratls_cert)?;
 
     match tee_type {
         TeeType::Sev => {
-            let quote: SEVQuote = bincode::deserialize(&quote).map_err(|_| {
+            let quote: SEVQuote = bincode::deserialize(&raw_quote).map_err(|_| {
                 Error::InvalidFormat("Can't deserialize the SEV quote bytes".to_owned())
             })?;
 
             verify_report_data(&quote.report.report_data[0..32], &ratls_cert)?;
 
             // Verify the quote itself
-            Ok(
-                sev_quote::quote::verify_quote(&quote.report, &quote.certs, sev_measurement)
-                    .await?,
-            )
+            Ok(sev_quote::quote::verify_quote(
+                &quote.report,
+                &quote.certs,
+                sev_measurement,
+            )?)
         }
         TeeType::Sgx => {
-            let (quote, _, _, _) = sgx_quote::quote::parse_quote(&quote)?;
+            let (quote, _, _, _) = sgx_quote::quote::parse_quote(&raw_quote)?;
+
             verify_report_data(&quote.report_body.report_data[0..32], &ratls_cert)?;
 
             // Verify the quote itself
             Ok(sgx_quote::quote::verify_quote(
-                &quote, mr_enclave, mr_signer,
+                &raw_quote, mr_enclave, mr_signer,
             )?)
         }
     }

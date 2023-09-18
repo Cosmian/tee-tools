@@ -28,9 +28,13 @@ pub struct VerifyArgs {
 }
 
 impl VerifyArgs {
-    pub async fn run(&self) -> Result<()> {
+    pub fn run(&self) -> Result<()> {
         let mr_signer = if let Some(path) = &self.signer_key {
-            Some(compute_mr_signer(&fs::read_to_string(path)?)?)
+            Some(
+                compute_mr_signer(&fs::read_to_string(path)?)?
+                    .as_slice()
+                    .try_into()?,
+            )
         } else {
             None
         };
@@ -52,8 +56,7 @@ impl VerifyArgs {
             sev_measurement,
             mrenclave,
             mr_signer,
-        )
-        .await?;
+        )?;
 
         println!("Verification succeed!");
 
