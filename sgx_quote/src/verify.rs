@@ -9,7 +9,7 @@ use log::debug;
 use p256::ecdsa::signature::Verifier;
 use p256::ecdsa::{Signature, VerifyingKey};
 use p256::{AffinePoint, EncodedPoint};
-use reqwest::get;
+use reqwest::blocking::get;
 use serde::Deserialize;
 use sgx_pck_extension::SgxPckExtension;
 use sha2::{Digest, Sha256};
@@ -21,7 +21,7 @@ use x509_parser::revocation_list::CertificateRevocationList;
 
 use elliptic_curve::sec1::FromEncodedPoint;
 
-pub(crate) async fn verify_pck_chain_and_tcb(
+pub(crate) fn verify_pck_chain_and_tcb(
     raw_quote: &[u8],
     certification_data: &[u8],
     qe_report_signature: &[u8],
@@ -85,23 +85,28 @@ pub(crate) async fn verify_pck_chain_and_tcb(
     }
 
     debug!("Verifying root ca crl");
-    verify_root_ca_crl(pccs_url, &root_ca_cert).await?;
+    verify_root_ca_crl(pccs_url, &root_ca_cert)?;
 
     debug!("Verifying pck crl");
-    verify_pck_cert_crl(pccs_url, &root_ca_cert, &pck_ca_cert).await?;
+    verify_pck_cert_crl(pccs_url, &root_ca_cert, &pck_ca_cert)?;
 
     debug!("Verifying tcb info");
     verify_tcb_info(
         pccs_url,
         &root_ca_cert,
         &SgxPckExtension::from_pem_certificate_content(&chain[0])?,
-    )
-    .await?;
+    )?;
 
     debug!("Verifying QE report signature");
     let pck_pk = VerifyingKey::from_public_key_der(pck_cert.public_key().raw)?;
     pck_pk.verify(
-        &raw_quote[QUOTE_QE_REPORT_OFFSET..QUOTE_QE_REPORT_SIZE + QUOTE_QE_REPORT_OFFSET],
+        &raw_quote
+            .get(QUOTE_QE_REPORT_OFFSET..QUOTE_QE_REPORT_SIZE + QUOTE_QE_REPORT_OFFSET)
+            .ok_or_else(|| {
+                Error::InvalidFormat(
+                    "Bad offset extraction to check QE report signature".to_owned(),
+                )
+            })?,
         &Signature::from_slice(qe_report_signature)?,
     )?;
 
@@ -128,9 +133,9 @@ pub(crate) fn verify_quote_signature(
     let mut pubkey_hash = Sha256::new();
     pubkey_hash.update(signature.attest_pub_key);
     pubkey_hash.update(&auth_data.auth_data);
-    let expected_qe_report_data = pubkey_hash.finalize()[..].to_vec();
+    let expected_qe_report_data = &pubkey_hash.finalize()[..];
 
-    if signature.qe_report.report_data[..32] != expected_qe_report_data {
+    if &signature.qe_report.report_data[..32] != expected_qe_report_data {
         return Err(Error::VerificationFailure(
             "Unexpected REPORTDATA in QE report".to_owned(),
         ));
@@ -153,7 +158,7 @@ struct TcbInfoData {
     tcb_info: TcbInfo,
 }
 
-pub(crate) async fn verify_tcb_info(
+pub(crate) fn verify_tcb_info(
     pccs_url: &str,
     root_ca_cert: &X509Certificate<'_>,
     sgx_pck_extension: &SgxPckExtension,
@@ -162,14 +167,13 @@ pub(crate) async fn verify_tcb_info(
     let params = [("fmspc", hex::encode(sgx_pck_extension.fmspc))];
     let url = reqwest::Url::parse_with_params(&url_str, &params)
         .map_err(|e| Error::InvalidFormat(e.to_string()))?;
-    let rsp = get(url).await?;
+    let rsp = get(url)?;
     let status = rsp.status();
-    let (headers, body) = (rsp.headers().clone(), rsp.text().await?);
+    let (headers, body) = (rsp.headers().clone(), rsp.text()?);
 
     if !status.is_success() {
         return Err(Error::ResponseAPIError(format!(
-            "Request to {url_str} returns a {}: {:?}",
-            status, body,
+            "Request to {url_str} returns a {status}: {body:?}",
         )));
     }
 
@@ -274,19 +278,18 @@ pub(crate) fn get_certificate_chain_from_pem(data: &[u8]) -> Result<Vec<Vec<u8>>
     Ok(chain)
 }
 
-pub(crate) async fn verify_root_ca_crl(
+pub(crate) fn verify_root_ca_crl(
     pccs_url: &str,
     root_ca: &X509Certificate<'_>,
 ) -> Result<(), Error> {
     let url = format!("{pccs_url}/sgx/certification/v4/rootcacrl");
-    let rsp = get(&url).await?;
+    let rsp = get(&url)?;
     let status = rsp.status();
-    let body = rsp.bytes().await?;
+    let body = rsp.bytes()?;
 
     if !status.is_success() {
         return Err(Error::ResponseAPIError(format!(
-            "Request to  {url} returns a {}: {}",
-            status,
+            "Request to  {url} returns a {status}: {}",
             String::from_utf8_lossy(&body),
         )));
     }
@@ -306,9 +309,9 @@ pub(crate) async fn verify_root_ca_crl(
 
     let is_revoked = crl
         .iter_revoked_certificates()
-        .find(|revoked| revoked.raw_serial() == root_ca.raw_serial());
+        .any(|revoked| revoked.raw_serial() == root_ca.raw_serial());
 
-    if is_revoked.is_some() {
+    if is_revoked {
         return Err(Error::VerificationFailure(
             "Intel Root CA certificate is revoked".to_owned(),
         ));
@@ -317,7 +320,7 @@ pub(crate) async fn verify_root_ca_crl(
     Ok(())
 }
 
-pub(crate) async fn verify_pck_cert_crl(
+pub(crate) fn verify_pck_cert_crl(
     pccs_url: &str,
     root_ca_cert: &X509Certificate<'_>,
     pck_ca_cert: &X509Certificate<'_>,
@@ -346,14 +349,13 @@ pub(crate) async fn verify_pck_cert_crl(
     let params = [("ca", ca), ("encoding", "der")];
     let url = reqwest::Url::parse_with_params(&url_str, &params)
         .map_err(|e| Error::InvalidFormat(e.to_string()))?;
-    let rsp = get(url).await?;
+    let rsp = get(url)?;
     let status = rsp.status();
-    let (headers, body) = (rsp.headers().clone(), rsp.bytes().await?);
+    let (headers, body) = (rsp.headers().clone(), rsp.bytes()?);
 
     if !status.is_success() {
         return Err(Error::ResponseAPIError(format!(
-            "Request to  {url_str} returns a {}: {}",
-            status,
+            "Request to  {url_str} returns a {status}: {}",
             String::from_utf8_lossy(&body),
         )));
     }
@@ -374,9 +376,9 @@ pub(crate) async fn verify_pck_cert_crl(
 
     let is_revoked = crl
         .iter_revoked_certificates()
-        .find(|revoked| revoked.raw_serial() == pck_ca_cert.raw_serial());
+        .any(|revoked| revoked.raw_serial() == pck_ca_cert.raw_serial());
 
-    if is_revoked.is_some() {
+    if is_revoked {
         return Err(Error::VerificationFailure(
             "Intel PCK CA certificate revoked".to_owned(),
         ));

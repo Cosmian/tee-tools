@@ -229,7 +229,7 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>, Error> {
 /// - The MRenclave
 /// - The MRsigner
 /// - The quote collaterals
-pub async fn verify_quote(
+pub fn verify_quote(
     raw_quote: &[u8],
     mr_enclave: Option<[u8; MRENCLAVE_SIZE]>,
     mr_signer: Option<[u8; MRSIGNER_SIZE]>,
@@ -262,8 +262,7 @@ pub async fn verify_quote(
         &certs.certification_data,
         &signature.qe_report_signature,
         PCCS_URL,
-    )
-    .await?;
+    )?;
 
     debug!("Verifying quote signature");
     verify_quote_signature(raw_quote, &auth_data, &signature)?;
@@ -365,10 +364,10 @@ mod tests {
             parse_quote(raw_quote).unwrap();
     }
 
-    #[tokio::test]
-    async fn test_verify_quote() {
+    #[test]
+    fn test_verify_quote() {
         init();
         let raw_quote = include_bytes!("../data/quote.dat");
-        assert!(verify_quote(raw_quote, None, None).await.is_ok());
+        assert!(verify_quote(raw_quote, None, None).is_ok());
     }
 }

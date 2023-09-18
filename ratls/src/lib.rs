@@ -68,7 +68,7 @@ pub fn guess_tee() -> Result<TeeType, Error> {
 /// - The MRsigner
 /// - The report data content
 /// - The quote collaterals
-pub async fn verify_ratls(
+pub fn verify_ratls(
     pem_ratls_cert: &[u8],
     sev_measurement: Option<[u8; 48]>,
     mr_enclave: Option<[u8; 32]>,
@@ -98,10 +98,11 @@ pub async fn verify_ratls(
             verify_report_data(&quote.report.report_data[0..32], &ratls_cert)?;
 
             // Verify the quote itself
-            Ok(
-                sev_quote::quote::verify_quote(&quote.report, &quote.certs, sev_measurement)
-                    .await?,
-            )
+            Ok(sev_quote::quote::verify_quote(
+                &quote.report,
+                &quote.certs,
+                sev_measurement,
+            )?)
         }
         TeeType::Sgx => {
             let (quote, _, _, _) = sgx_quote::quote::parse_quote(&quote)?;
@@ -109,7 +110,9 @@ pub async fn verify_ratls(
             verify_report_data(&quote.report_body.report_data[0..32], &ratls_cert)?;
 
             // Verify the quote itself
-            Ok(sgx_quote::quote::verify_quote(&quote, mr_enclave, mr_signer).await?)
+            Ok(sgx_quote::quote::verify_quote(
+                &quote, mr_enclave, mr_signer,
+            )?)
         }
     }
 }

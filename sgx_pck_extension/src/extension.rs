@@ -121,12 +121,12 @@ impl SgxPckExtension {
     }
 
     pub fn from_pem_certificate_content(
-        pem_content: &[u8],
+        decoded_pem: &[u8],
     ) -> Result<SgxPckExtension, SgxPckExtensionError> {
         let sgx_extension_oid =
             Oid::from_str(&SGX_EXTENSIONS_OID.to_string()).expect("Bad SGX extension OID");
 
-        match parse_x509_certificate(pem_content) {
+        match parse_x509_certificate(decoded_pem) {
             Ok((rem, _)) if !rem.is_empty() => Err(SgxPckExtensionError::X509ParsingError),
             Ok((_, x509)) => match x509.get_extension_unique(&sgx_extension_oid) {
                 Ok(Some(sgx_extension)) => SgxPckExtension::from_der(sgx_extension.value)

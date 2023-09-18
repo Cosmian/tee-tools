@@ -9,7 +9,7 @@ use asn1_rs::{FromDer, Oid};
 
 use log::debug;
 
-use reqwest::get;
+use reqwest::blocking::get;
 use serde::{Deserialize, Serialize};
 use sev::{
     certs::snp::Verifiable,
@@ -106,7 +106,7 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<SEVQuote, Error> {
 /// Reference:
 /// - <https://www.amd.com/content/dam/amd/en/documents/epyc-technical-docs/specifications/57230.pdf>
 /// - <https://www.amd.com/content/dam/amd/en/documents/developer/58217-epyc-9004-ug-platform-attestation-using-virtee-snp.pdf>
-pub async fn verify_quote(
+pub fn verify_quote(
     quote: &AttestationReport,
     certificates: &[CertTableEntry],
     measurement: Option<[u8; 48]>,
@@ -127,7 +127,7 @@ pub async fn verify_quote(
 
     let chain = match (vlek, ark, ask, vcek) {
         (Some(vlek), _, _, _) => Ok(Chain {
-            ca: request_amd_vlek_cert_chain(SEV_PROD_NAME).await?,
+            ca: request_amd_vlek_cert_chain(SEV_PROD_NAME)?,
             vcek: Certificate::from_der(&vlek.data)?,
         }),
         (None, Some(ark), Some(ask), Some(vcek)) => Ok(Chain {
@@ -135,8 +135,8 @@ pub async fn verify_quote(
             vcek: Certificate::from_der(&vcek.data)?,
         }),
         (None, None, None, None) => Ok(Chain {
-            ca: request_amd_vcek_cert_chain(SEV_PROD_NAME).await?,
-            vcek: request_vcek(SEV_PROD_NAME, quote.chip_id, quote.reported_tcb).await?,
+            ca: request_amd_vcek_cert_chain(SEV_PROD_NAME)?,
+            vcek: request_vcek(SEV_PROD_NAME, quote.chip_id, quote.reported_tcb)?,
         }),
         (_, _, _, _) => Err(Error::Unimplemented(
             "Unhandled combination of ARK/ASK/VCEK/VLEK certificates".to_owned(),
@@ -150,7 +150,7 @@ pub async fn verify_quote(
     (&chain, quote).verify()?;
 
     // Check the revocation list
-    verify_revocation_list(&chain).await?;
+    verify_revocation_list(&chain)?;
 
     let vcek_pem = chain.vcek.to_pem()?;
     let (rem, pem) = parse_x509_pem(&vcek_pem)?;
@@ -181,14 +181,14 @@ pub async fn verify_quote(
 }
 
 /// Verify the certification chain against the AMD revocation list
-async fn verify_revocation_list(chain: &Chain) -> Result<(), Error> {
+fn verify_revocation_list(chain: &Chain) -> Result<(), Error> {
     // Get the crl
     let url = format!("{KDS_CERT_SITE}{KDS_VCEK}/{SEV_PROD_NAME}/{KDS_CRL}");
     debug!("Requesting CRL from: {url}");
 
-    let rsp = get(&url).await?;
+    let rsp = get(&url)?;
     let status = rsp.status();
-    let body = rsp.bytes().await?;
+    let body = rsp.bytes()?;
 
     if !status.is_success() {
         return Err(Error::ResponseAPIError(format!(
@@ -342,25 +342,25 @@ fn verify_tcb(report: &AttestationReport, cert: &X509Certificate) -> Result<(), 
 }
 
 /// Request the AMD cert chain which signed the VLEK certificate
-async fn request_amd_vlek_cert_chain(sev_prod_name: &str) -> Result<ca::Chain, Error> {
+fn request_amd_vlek_cert_chain(sev_prod_name: &str) -> Result<ca::Chain, Error> {
     let url = format!("{KDS_CERT_SITE}{KDS_VLEK}/{sev_prod_name}/{KDS_CERT_CHAIN}");
-    request_amd_cert_chain(&url).await
+    request_amd_cert_chain(&url)
 }
 
 /// Request the AMD cert chain which signed the VCEK certificate
-async fn request_amd_vcek_cert_chain(sev_prod_name: &str) -> Result<ca::Chain, Error> {
+fn request_amd_vcek_cert_chain(sev_prod_name: &str) -> Result<ca::Chain, Error> {
     let url = format!("{KDS_CERT_SITE}{KDS_VCEK}/{sev_prod_name}/{KDS_CERT_CHAIN}");
-    request_amd_cert_chain(&url).await
+    request_amd_cert_chain(&url)
 }
 
 /// Requests the certificate-chain (AMD ASK + AMD ARK)
 /// These may be used to verify the downloaded VCEK is authentic.
-async fn request_amd_cert_chain(url: &str) -> Result<ca::Chain, Error> {
+fn request_amd_cert_chain(url: &str) -> Result<ca::Chain, Error> {
     // Should make -> https://kdsintf.amd.com/vcek/v1/{SEV_PROD_NAME}/cert_chain
     debug!("Requesting AMD certificate-chain from: {url}");
-    let rsp = get(url).await?;
+    let rsp = get(url)?;
     let status = rsp.status();
-    let body = rsp.bytes().await?;
+    let body = rsp.bytes()?;
 
     if !status.is_success() {
         return Err(Error::ResponseAPIError(format!(
@@ -411,7 +411,7 @@ pub(crate) fn get_certificate_chain_from_pem(data: &[u8]) -> Result<Vec<Vec<u8>>
 }
 
 /// Requests the VCEK for the specified chip and TCP
-pub async fn request_vcek(
+pub fn request_vcek(
     sev_prod_name: &str,
     chip_id: [u8; 64],
     reported_tcb: TcbVersion,
@@ -423,9 +423,9 @@ pub async fn request_vcek(
     );
     debug!("Requesting VCEK from: {url}\n");
 
-    let rsp = get(&url).await?;
+    let rsp = get(&url)?;
     let status = rsp.status();
-    let body = rsp.bytes().await?;
+    let body = rsp.bytes()?;
 
     if !status.is_success() {
         return Err(Error::ResponseAPIError(format!(
@@ -451,8 +451,8 @@ mod tests {
         let _ = builder.try_init();
     }
 
-    #[tokio::test]
-    async fn test_verify_quote() {
+    #[test]
+    fn test_verify_quote() {
         init();
         let raw_report = include_bytes!("../data/report.bin");
 
@@ -460,8 +460,6 @@ mod tests {
             .map_err(|_| Error::InvalidFormat("Can't deserialize the SEV report bytes".to_owned()))
             .unwrap();
 
-        assert!(verify_quote(&quote.report, &quote.certs, None)
-            .await
-            .is_ok());
+        assert!(verify_quote(&quote.report, &quote.certs, None).is_ok());
     }
 }
