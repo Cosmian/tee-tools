@@ -1,5 +1,6 @@
 use der::{asn1::Ia5String, pem::LineEnding, EncodePem};
 
+use ecdsa::elliptic_curve::ScalarPrimitive;
 use p256::ecdsa::{DerSignature, VerifyingKey};
 use rand::RngCore;
 use rand_chacha::rand_core::SeedableRng;
@@ -208,6 +209,7 @@ pub fn generate_ratls_cert(
     subject_alternative_names: Vec<&str>,
     days_before_expiration: u64,
     quote_extra_data: Option<[u8; 32]>,
+    deterministic: bool,
 ) -> Result<(String, String), Error> {
     let mut csrng = ChaChaRng::from_entropy();
 
@@ -227,7 +229,21 @@ pub fn generate_ratls_cert(
         include_subject_key_identifier: true,
     };
 
-    let secret_key = p256::SecretKey::random(&mut csrng);
+    let secret_key = if !deterministic {
+        // Randomly generated the secret key
+        p256::SecretKey::random(&mut csrng)
+    } else {
+        // Derive the secret key from the tee measurements
+        // No salt are used: the key will always be the same for a given measurement
+        let secret = match guess_tee()? {
+            TeeType::Sgx => sgx_quote::key::get_key(false)?,
+            TeeType::Sev => sev_quote::key::get_key(false)?,
+        };
+
+        let sk = ScalarPrimitive::from_slice(&secret)?;
+        p256::SecretKey::new(sk)
+    };
+
     let pem_sk = secret_key
         .clone()
         .to_sec1_pem(LineEnding::LF)
