@@ -1,6 +1,6 @@
 use der::{asn1::Ia5String, pem::LineEnding, EncodePem};
 
-use p256::ecdsa::DerSignature;
+use p256::ecdsa::{DerSignature, VerifyingKey};
 use rand::RngCore;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaChaRng;
@@ -11,7 +11,7 @@ use rustls::{
 };
 use sev_quote::{self, quote::SEVQuote};
 use sha2::{Digest, Sha256};
-use spki::SubjectPublicKeyInfoOwned;
+use spki::{DecodePublicKey, EncodePublicKey, SubjectPublicKeyInfoOwned};
 use std::{
     convert::TryFrom,
     io::Write,
@@ -95,7 +95,7 @@ pub fn verify_ratls(
                 Error::InvalidFormat("Can't deserialize the SEV quote bytes".to_owned())
             })?;
 
-            verify_report_data(&quote.report.report_data[0..32], &ratls_cert)?;
+            verify_report_data(&quote.report.report_data, &ratls_cert)?;
 
             // Verify the quote itself
             Ok(sev_quote::quote::verify_quote(
@@ -107,7 +107,7 @@ pub fn verify_ratls(
         TeeType::Sgx => {
             let (quote, _, _, _) = sgx_quote::quote::parse_quote(&raw_quote)?;
 
-            verify_report_data(&quote.report_body.report_data[0..32], &ratls_cert)?;
+            verify_report_data(&quote.report_body.report_data, &ratls_cert)?;
 
             // Verify the quote itself
             Ok(sgx_quote::quote::verify_quote(
@@ -123,11 +123,13 @@ fn verify_report_data(report_data: &[u8], ratls_cert: &X509Certificate) -> Resul
     let mut hasher = Sha256::new();
 
     let public_key = ratls_cert.public_key().raw;
+    let pk = VerifyingKey::from_public_key_der(public_key)?;
+    let public_key = pk.to_sec1_bytes();
     hasher.update(public_key);
 
     let expected_digest = &hasher.finalize()[..];
 
-    if report_data != expected_digest {
+    if &report_data[0..32] != expected_digest {
         return Err(Error::VerificationFailure(
             "Failed to verify the RA-TLS public key fingerprint".to_owned(),
         ));
@@ -231,12 +233,16 @@ pub fn generate_ratls_cert(
         .to_sec1_pem(LineEnding::LF)
         .map_err(|_| Error::RatlsError("can't convert secret key to PEM".to_owned()))?
         .to_string();
+
     let signer = p256::ecdsa::SigningKey::from(secret_key);
-    let pk_info = SubjectPublicKeyInfoOwned::try_from(&signer.to_bytes()[..]).map_err(|_| {
-        Error::RatlsError("can't create SubjectPublicKeyInfo from public key".to_owned())
+    let pk_der = signer.verifying_key().to_public_key_der()?;
+    let spki = SubjectPublicKeyInfoOwned::try_from(pk_der.as_bytes()).map_err(|e| {
+        Error::RatlsError(format!(
+            "can't create SubjectPublicKeyInfo from public key: {e:?}"
+        ))
     })?;
     let mut builder =
-        CertificateBuilder::new(profile, serial_number, validity, subject, pk_info, &signer)
+        CertificateBuilder::new(profile, serial_number, validity, subject, spki, &signer)
             .map_err(|_| Error::RatlsError("failed to create certificate builder".to_owned()))?;
 
     match get_ratls_extension(&signer.verifying_key().to_sec1_bytes(), quote_extra_data)? {
@@ -336,7 +342,7 @@ mod tests {
     use base64::{engine::general_purpose, Engine as _};
 
     #[test]
-    fn it_works() {
+    fn test_get_server_certificate() {
         let server_cert = get_server_certificate("self-signed.badssl.com", 443).unwrap();
 
         let b64_server_cert = r#"
@@ -365,5 +371,36 @@ mod tests {
         assert_eq!(expected_server_cert, server_cert);
         let (_rem, cert) = x509_parser::parse_x509_certificate(&server_cert).unwrap();
         println!("{:?}", cert);
+    }
+
+    #[test]
+    fn test_sgx_verify_ratls() {
+        let cert = include_bytes!("../data/sgx-cert.ratls.pem");
+
+        let mrenclave =
+            hex::decode(b"958e39c89abec8cfb5ce01961a50860c770c75b01e64ed77847097f9705ed7bd")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let mrsigner =
+            hex::decode(b"c1c161d0dd996e8a9847de67ea2c00226761f7715a2c422d3012ac10795a1ef5")
+                .unwrap()
+                .try_into()
+                .unwrap();
+
+        assert!(verify_ratls(cert, None, Some(mrenclave), Some(mrsigner)).is_ok());
+    }
+
+    #[test]
+    fn test_sev_verify_ratls() {
+        let cert = include_bytes!("../data/sev-cert.ratls.pem");
+
+        let measurement =
+            hex::decode(b"c2c84b9364fc9f0f54b04534768c860c6e0e386ad98b96e8b98eca46ac8971d05c531ba48373f054c880cfd1f4a0a84e")
+                .unwrap()
+                .try_into()
+                .unwrap();
+
+        assert!(verify_ratls(cert, Some(measurement), None, None).is_ok());
     }
 }

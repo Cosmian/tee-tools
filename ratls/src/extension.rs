@@ -34,12 +34,10 @@ impl AsExtension for IntelRatlsExtension {
         subject: &x509_cert::name::Name,
         extensions: &[Extension],
     ) -> Result<Extension, der::Error> {
-        let content = OctetString::new(<Self as der::Encode>::to_der(self)?)?;
-
         Ok(Extension {
             extn_id: <Self as AssociatedOid>::OID,
             critical: self.critical(subject, extensions),
-            extn_value: content,
+            extn_value: self.0.clone(),
         })
     }
 }
@@ -64,12 +62,10 @@ impl AsExtension for AMDRatlsSExtension {
         subject: &x509_cert::name::Name,
         extensions: &[Extension],
     ) -> Result<Extension, der::Error> {
-        let content = OctetString::new(<Self as der::Encode>::to_der(self)?)?;
-
         Ok(Extension {
             extn_id: <Self as AssociatedOid>::OID,
             critical: self.critical(subject, extensions),
-            extn_value: content,
+            extn_value: self.0.clone(),
         })
     }
 }

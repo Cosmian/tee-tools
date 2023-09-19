@@ -15,8 +15,7 @@ use sgx_pck_extension::SgxPckExtension;
 use sha2::{Digest, Sha256};
 use x509_parser::certificate::X509Certificate;
 use x509_parser::parse_x509_certificate;
-use x509_parser::pem::parse_x509_pem;
-use x509_parser::prelude::FromDer;
+use x509_parser::prelude::{FromDer, Pem};
 use x509_parser::revocation_list::CertificateRevocationList;
 
 use elliptic_curve::sec1::FromEncodedPoint;
@@ -254,25 +253,25 @@ pub(crate) fn verify_tcb_info(
 
 pub(crate) fn get_certificate_chain_from_pem(data: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
     let mut chain = Vec::new();
-    let mut pointer = data;
 
-    loop {
-        debug!("Reading certificate from {} bytes", pointer.len());
-        let (rem, pem) = parse_x509_pem(pointer)?;
+    for pem in Pem::iter_from_buffer(data) {
+        match pem {
+            Ok(pem) => {
+                if &pem.label != "CERTIFICATE" {
+                    return Err(Error::InvalidFormat(
+                        "Not a certificate or certificate is malformed".to_owned(),
+                    ));
+                }
 
-        if &pem.label != "CERTIFICATE" {
-            return Err(Error::InvalidFormat(
-                "Not a certificate or certificate is malformed".to_owned(),
-            ));
+                chain.push(pem.contents.clone());
+            }
+
+            Err(e) => {
+                return Err(Error::InvalidFormat(format!(
+                    "Not a certificate or certificate is malformed {e:?}"
+                )));
+            }
         }
-
-        chain.push(pem.contents.clone());
-
-        if rem.is_empty() || rem[0] == 0 {
-            break;
-        }
-
-        pointer = rem;
     }
 
     Ok(chain)

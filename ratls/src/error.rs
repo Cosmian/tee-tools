@@ -14,6 +14,8 @@ pub enum Error {
     IOError(#[from] std::io::Error),
     #[error("{0}")]
     InvalidFormat(String),
+    #[error("Invalid quote report data length")]
+    InvalidQuoteReportData,
     #[error("ServerCertificateError")]
     ServerCertificateError,
     #[error(transparent)]
@@ -28,4 +30,6 @@ pub enum Error {
     X509PemParserError(#[from] x509_parser::nom::Err<x509_parser::error::PEMError>),
     #[error(transparent)]
     X509ParserError(#[from] x509_parser::error::X509Error),
+    #[error(transparent)]
+    SpkiParserError(#[from] spki::Error),
 }

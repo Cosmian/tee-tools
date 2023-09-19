@@ -25,3 +25,4 @@ x509-parser = { workspace = true }
 
 [dev-dependencies]
 base64 = "0.21"
+hex = { workspace = true }

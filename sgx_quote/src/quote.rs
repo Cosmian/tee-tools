@@ -240,9 +240,10 @@ pub fn verify_quote(
     debug!("Checking MRENCLAVE");
     if let Some(mr_enclave) = mr_enclave {
         if quote.report_body.mr_enclave != mr_enclave {
-            return Err(Error::VerificationFailure(
-                "MRENCLAVE miss-matches expected value".to_owned(),
-            ));
+            return Err(Error::VerificationFailure(format!(
+                "MRENCLAVE miss-matches expected value ({})",
+                hex::encode(quote.report_body.mr_enclave),
+            )));
         }
     }
 
@@ -250,9 +251,10 @@ pub fn verify_quote(
     debug!("Checking MRSIGNER");
     if let Some(mr_signer) = mr_signer {
         if quote.report_body.mr_signer != mr_signer {
-            return Err(Error::VerificationFailure(
-                "MRSIGNER miss-matches expected value".to_owned(),
-            ));
+            return Err(Error::VerificationFailure(format!(
+                "MRSIGNER miss-matches expected value ({})",
+                hex::encode(quote.report_body.mr_signer),
+            )));
         }
     }
 
@@ -368,6 +370,18 @@ mod tests {
     fn test_verify_quote() {
         init();
         let raw_quote = include_bytes!("../data/quote.dat");
-        assert!(verify_quote(raw_quote, None, None).is_ok());
+
+        let mrenclave =
+            hex::decode(b"f07830d7d2f8c67f64438303f3bc1a2e29f603ad1ab60ef94fd41d2bf7231866")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let mrsigner =
+            hex::decode(b"c1c161d0dd996e8a9847de67ea2c00226761f7715a2c422d3012ac10795a1ef5")
+                .unwrap()
+                .try_into()
+                .unwrap();
+
+        assert!(verify_quote(raw_quote, Some(mrenclave), Some(mrsigner)).is_ok());
     }
 }
