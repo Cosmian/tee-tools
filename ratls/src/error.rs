@@ -32,4 +32,6 @@ pub enum Error {
     X509ParserError(#[from] x509_parser::error::X509Error),
     #[error(transparent)]
     SpkiParserError(#[from] spki::Error),
+    #[error(transparent)]
+    EcdsaError(#[from] ecdsa::elliptic_curve::Error),
 }

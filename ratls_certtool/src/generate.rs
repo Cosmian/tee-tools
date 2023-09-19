@@ -30,6 +30,10 @@ pub struct GenerateArgs {
     /// Path of the generated certificate
     #[arg(short, long, default_value = PathBuf::from(".").into_os_string())]
     output: PathBuf,
+
+    /// Deterministic keys tied to the enclave or vm (by default it's randomly generated)
+    #[arg(short, long)]
+    deterministic: bool,
 }
 
 impl GenerateArgs {
@@ -55,6 +59,7 @@ impl GenerateArgs {
             vec![&self.san],
             self.days,
             extra_data,
+            self.deterministic,
         )?;
 
         let key_path = self.output.join(PathBuf::from("key.ratls.pem"));
