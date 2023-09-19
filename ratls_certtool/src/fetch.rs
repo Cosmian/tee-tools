@@ -1,7 +1,8 @@
 use std::{fs, path::PathBuf};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::Args;
+use pem_rfc7468::LineEnding;
 use ratls::get_server_certificate;
 
 /// Fetch an RATLS certificate from a domain name
@@ -12,7 +13,7 @@ pub struct FetchArgs {
     hostname: String,
 
     /// The port to fetch
-    #[arg(long, short, action)]
+    #[arg(long, short, action, default_value_t = 443)]
     port: u32,
 
     /// Path of the fetched certificate
@@ -23,6 +24,8 @@ pub struct FetchArgs {
 impl FetchArgs {
     pub fn run(&self) -> Result<()> {
         let cert = get_server_certificate(&self.hostname, self.port)?;
+        let cert = pem_rfc7468::encode_string("CERTIFICATE", LineEnding::default(), &cert)
+            .map_err(|e| anyhow!(e))?;
 
         let cert_path = self.output.join(PathBuf::from("cert.ratls.pem"));
 
