@@ -32,7 +32,7 @@ pub struct GenerateArgs {
     output: PathBuf,
 
     /// Deterministic keys tied to the enclave or vm (by default it's randomly generated)
-    #[arg(short, long)]
+    #[arg(long)]
     deterministic: bool,
 }
 

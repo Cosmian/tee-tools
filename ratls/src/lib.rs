@@ -2,6 +2,7 @@ use der::{asn1::Ia5String, pem::LineEnding, EncodePem};
 
 use ecdsa::elliptic_curve::ScalarPrimitive;
 use p256::ecdsa::{DerSignature, VerifyingKey};
+use p256::pkcs8::EncodePrivateKey;
 use rand::RngCore;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaChaRng;
@@ -246,7 +247,7 @@ pub fn generate_ratls_cert(
 
     let pem_sk = secret_key
         .clone()
-        .to_sec1_pem(LineEnding::LF)
+        .to_pkcs8_pem(LineEnding::LF)
         .map_err(|_| Error::RatlsError("can't convert secret key to PEM".to_owned()))?
         .to_string();
 
