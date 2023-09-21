@@ -51,6 +51,14 @@ pub enum TeeType {
     Sev,
 }
 
+pub enum TeeMeasurement {
+    Sgx {
+        mr_signer: [u8; 32],
+        mr_enclave: [u8; 32],
+    },
+    Sev([u8; 48]),
+}
+
 /// Tell whether the platform is an SGX or an SEV processor
 pub fn guess_tee() -> Result<TeeType, Error> {
     if sev_quote::is_sev() {
@@ -73,9 +81,7 @@ pub fn guess_tee() -> Result<TeeType, Error> {
 /// - The quote collaterals
 pub fn verify_ratls(
     pem_ratls_cert: &[u8],
-    sev_measurement: Option<[u8; 48]>,
-    mr_enclave: Option<[u8; 32]>,
-    mr_signer: Option<[u8; 32]>,
+    measurement: Option<TeeMeasurement>,
 ) -> Result<(), Error> {
     let (rem, pem) = parse_x509_pem(pem_ratls_cert)?;
 
@@ -100,17 +106,33 @@ pub fn verify_ratls(
 
             verify_report_data(&quote.report.report_data, &ratls_cert)?;
 
+            let measurement = if let Some(TeeMeasurement::Sev(m)) = measurement {
+                Some(m)
+            } else {
+                None
+            };
+
             // Verify the quote itself
             Ok(sev_quote::quote::verify_quote(
                 &quote.report,
                 &quote.certs,
-                sev_measurement,
+                measurement,
             )?)
         }
         TeeType::Sgx => {
             let (quote, _, _, _) = sgx_quote::quote::parse_quote(&raw_quote)?;
 
             verify_report_data(&quote.report_body.report_data, &ratls_cert)?;
+
+            let (mr_enclave, mr_signer) = if let Some(TeeMeasurement::Sgx {
+                mr_signer: s,
+                mr_enclave: e,
+            }) = measurement
+            {
+                (Some(e), Some(s))
+            } else {
+                (None, None)
+            };
 
             // Verify the quote itself
             Ok(sgx_quote::quote::verify_quote(
@@ -404,7 +426,14 @@ mod tests {
                 .try_into()
                 .unwrap();
 
-        assert!(verify_ratls(cert, None, Some(mrenclave), Some(mrsigner)).is_ok());
+        assert!(verify_ratls(
+            cert,
+            Some(TeeMeasurement::Sgx {
+                mr_signer: mrsigner,
+                mr_enclave: mrenclave
+            })
+        )
+        .is_ok());
     }
 
     #[test]
@@ -417,6 +446,6 @@ mod tests {
                 .try_into()
                 .unwrap();
 
-        assert!(verify_ratls(cert, Some(measurement), None, None).is_ok());
+        assert!(verify_ratls(cert, Some(TeeMeasurement::Sev(measurement))).is_ok());
     }
 }
