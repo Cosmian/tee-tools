@@ -21,6 +21,7 @@ use std::{
     time::Duration,
 };
 use std::{str::FromStr, time::SystemTime};
+use x509_cert::ext::pkix::BasicConstraints;
 
 use crate::{
     error::Error,
@@ -32,7 +33,7 @@ use crate::{
 use x509_cert::{
     builder::{Builder, CertificateBuilder, Profile},
     der::asn1::OctetString,
-    ext::pkix::{name::GeneralName, BasicConstraints, SubjectAltName},
+    ext::pkix::{name::GeneralName, SubjectAltName},
     name::Name,
     serial_number::SerialNumber,
     time::Validity,
@@ -205,7 +206,6 @@ pub fn get_ratls_extension(
 /// The RATLS certificate contains the sgx quote
 #[allow(clippy::too_many_arguments)]
 pub fn generate_ratls_cert(
-    issuer: &str,
     subject: &str,
     subject_alternative_names: Vec<&str>,
     days_before_expiration: u64,
@@ -217,18 +217,9 @@ pub fn generate_ratls_cert(
     let serial_number = SerialNumber::from(csrng.next_u32());
     let validity = Validity::from_now(Duration::new(days_before_expiration * 24 * 60 * 60, 0))
         .map_err(|_| Error::RatlsError("unexpected expiration validity".to_owned()))?;
-    let issuer =
-        Name::from_str(issuer).map_err(|_| Error::RatlsError("can't parse issuer".to_owned()))?;
+
     let subject =
         Name::from_str(subject).map_err(|_| Error::RatlsError("can't parse subject".to_owned()))?;
-
-    let profile = Profile::Leaf {
-        issuer: issuer.clone(),
-        enable_key_agreement: false,
-        enable_key_encipherment: false,
-        #[cfg(feature = "hazmat")]
-        include_subject_key_identifier: true,
-    };
 
     let secret_key = if !deterministic {
         // Randomly generated the secret key
@@ -258,9 +249,15 @@ pub fn generate_ratls_cert(
             "can't create SubjectPublicKeyInfo from public key: {e:?}"
         ))
     })?;
-    let mut builder =
-        CertificateBuilder::new(profile, serial_number, validity, subject, spki, &signer)
-            .map_err(|_| Error::RatlsError("failed to create certificate builder".to_owned()))?;
+    let mut builder = CertificateBuilder::new(
+        Profile::Manual { issuer: None },
+        serial_number,
+        validity,
+        subject,
+        spki,
+        &signer,
+    )
+    .map_err(|_| Error::RatlsError("failed to create certificate builder".to_owned()))?;
 
     match get_ratls_extension(&signer.verifying_key().to_sec1_bytes(), quote_extra_data)? {
         RatlsExtension::AMDTee(amd_ext) => builder
@@ -271,19 +268,22 @@ pub fn generate_ratls_cert(
             .map_err(|_| Error::RatlsError("can't create RA-TLS Intel extension".to_owned()))?,
     };
 
-    let subject_alternative_names = subject_alternative_names
-        .iter()
-        .map(|san| match san.parse::<Ipv4Addr>() {
-            Ok(ip) => GeneralName::from(IpAddr::V4(ip)),
-            Err(_) => GeneralName::DnsName(
-                Ia5String::try_from(san.to_string()).expect("SAN contains non-ascii characters"),
-            ),
-        })
-        .collect::<Vec<GeneralName>>();
+    if !subject_alternative_names.is_empty() {
+        let subject_alternative_names = subject_alternative_names
+            .iter()
+            .map(|san| match san.parse::<Ipv4Addr>() {
+                Ok(ip) => GeneralName::from(IpAddr::V4(ip)),
+                Err(_) => GeneralName::DnsName(
+                    Ia5String::try_from(san.to_string())
+                        .expect("SAN contains non-ascii characters"),
+                ),
+            })
+            .collect::<Vec<GeneralName>>();
 
-    builder
-        .add_extension(&SubjectAltName(subject_alternative_names))
-        .map_err(|_| Error::RatlsError("can't create SAN extension".to_owned()))?;
+        builder
+            .add_extension(&SubjectAltName(subject_alternative_names))
+            .map_err(|_| Error::RatlsError("can't create SAN extension".to_owned()))?;
+    }
 
     builder
         .add_extension(&BasicConstraints {
@@ -321,7 +321,6 @@ impl ServerCertVerifier for NoVerifier {
 /// Get the RATLS certificate from a `host`:`port`
 pub fn get_server_certificate(host: &str, port: u32) -> Result<Vec<u8>, Error> {
     let root_store = rustls::RootCertStore::empty();
-
     let mut socket = std::net::TcpStream::connect(format!("{host}:{port}"))
         .map_err(|_| Error::ConnectionError)?;
 

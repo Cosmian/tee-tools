@@ -55,7 +55,6 @@ impl GenerateArgs {
 
         let (private_key, cert) = generate_ratls_cert(
             &self.subject,
-            &self.subject,
             vec![&self.san],
             self.days,
             extra_data,
