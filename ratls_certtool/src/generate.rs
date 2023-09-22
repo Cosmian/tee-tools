@@ -32,7 +32,7 @@ pub struct GenerateArgs {
     output: PathBuf,
 
     /// Deterministic keys tied to the enclave or vm (by default it's randomly generated)
-    #[arg(short, long)]
+    #[arg(long)]
     deterministic: bool,
 }
 
@@ -54,7 +54,6 @@ impl GenerateArgs {
         };
 
         let (private_key, cert) = generate_ratls_cert(
-            &self.subject,
             &self.subject,
             vec![&self.san],
             self.days,

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Args;
 use hex::decode;
-use ratls::verify_ratls;
+use ratls::{verify_ratls, TeeMeasurement};
 use sgx_quote::mrsigner::compute_mr_signer;
 use std::fs;
 use std::path::PathBuf;
@@ -51,12 +51,14 @@ impl VerifyArgs {
             None
         };
 
-        verify_ratls(
-            fs::read_to_string(&self.cert)?.as_bytes(),
-            sev_measurement,
-            mrenclave,
-            mr_signer,
-        )?;
+        let measurement = match (mr_signer, mrenclave, sev_measurement) {
+            (None, None, None) => None,
+            (Some(s), Some(e), None) => Some(TeeMeasurement::Sgx { mr_signer: s, mr_enclave: e }),
+            (None, None, Some(m)) => Some(TeeMeasurement::Sev (m)),
+            _ => anyhow::bail!("Bad measurements combination. It should be [None | (--mrenclave & --signer_key) | measurement]")
+        };
+
+        verify_ratls(fs::read_to_string(&self.cert)?.as_bytes(), measurement)?;
 
         println!("Verification succeed!");
 

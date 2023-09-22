@@ -2,6 +2,7 @@ use der::{asn1::Ia5String, pem::LineEnding, EncodePem};
 
 use ecdsa::elliptic_curve::ScalarPrimitive;
 use p256::ecdsa::{DerSignature, VerifyingKey};
+use p256::pkcs8::EncodePrivateKey;
 use rand::RngCore;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaChaRng;
@@ -20,6 +21,7 @@ use std::{
     time::Duration,
 };
 use std::{str::FromStr, time::SystemTime};
+use x509_cert::ext::pkix::BasicConstraints;
 
 use crate::{
     error::Error,
@@ -31,7 +33,7 @@ use crate::{
 use x509_cert::{
     builder::{Builder, CertificateBuilder, Profile},
     der::asn1::OctetString,
-    ext::pkix::{name::GeneralName, BasicConstraints, SubjectAltName},
+    ext::pkix::{name::GeneralName, SubjectAltName},
     name::Name,
     serial_number::SerialNumber,
     time::Validity,
@@ -47,6 +49,14 @@ pub mod extension;
 pub enum TeeType {
     Sgx,
     Sev,
+}
+
+pub enum TeeMeasurement {
+    Sgx {
+        mr_signer: [u8; 32],
+        mr_enclave: [u8; 32],
+    },
+    Sev([u8; 48]),
 }
 
 /// Tell whether the platform is an SGX or an SEV processor
@@ -71,9 +81,7 @@ pub fn guess_tee() -> Result<TeeType, Error> {
 /// - The quote collaterals
 pub fn verify_ratls(
     pem_ratls_cert: &[u8],
-    sev_measurement: Option<[u8; 48]>,
-    mr_enclave: Option<[u8; 32]>,
-    mr_signer: Option<[u8; 32]>,
+    measurement: Option<TeeMeasurement>,
 ) -> Result<(), Error> {
     let (rem, pem) = parse_x509_pem(pem_ratls_cert)?;
 
@@ -98,17 +106,33 @@ pub fn verify_ratls(
 
             verify_report_data(&quote.report.report_data, &ratls_cert)?;
 
+            let measurement = if let Some(TeeMeasurement::Sev(m)) = measurement {
+                Some(m)
+            } else {
+                None
+            };
+
             // Verify the quote itself
             Ok(sev_quote::quote::verify_quote(
                 &quote.report,
                 &quote.certs,
-                sev_measurement,
+                measurement,
             )?)
         }
         TeeType::Sgx => {
             let (quote, _, _, _) = sgx_quote::quote::parse_quote(&raw_quote)?;
 
             verify_report_data(&quote.report_body.report_data, &ratls_cert)?;
+
+            let (mr_enclave, mr_signer) = if let Some(TeeMeasurement::Sgx {
+                mr_signer: s,
+                mr_enclave: e,
+            }) = measurement
+            {
+                (Some(e), Some(s))
+            } else {
+                (None, None)
+            };
 
             // Verify the quote itself
             Ok(sgx_quote::quote::verify_quote(
@@ -204,7 +228,6 @@ pub fn get_ratls_extension(
 /// The RATLS certificate contains the sgx quote
 #[allow(clippy::too_many_arguments)]
 pub fn generate_ratls_cert(
-    issuer: &str,
     subject: &str,
     subject_alternative_names: Vec<&str>,
     days_before_expiration: u64,
@@ -216,18 +239,9 @@ pub fn generate_ratls_cert(
     let serial_number = SerialNumber::from(csrng.next_u32());
     let validity = Validity::from_now(Duration::new(days_before_expiration * 24 * 60 * 60, 0))
         .map_err(|_| Error::RatlsError("unexpected expiration validity".to_owned()))?;
-    let issuer =
-        Name::from_str(issuer).map_err(|_| Error::RatlsError("can't parse issuer".to_owned()))?;
+
     let subject =
         Name::from_str(subject).map_err(|_| Error::RatlsError("can't parse subject".to_owned()))?;
-
-    let profile = Profile::Leaf {
-        issuer: issuer.clone(),
-        enable_key_agreement: false,
-        enable_key_encipherment: false,
-        #[cfg(feature = "hazmat")]
-        include_subject_key_identifier: true,
-    };
 
     let secret_key = if !deterministic {
         // Randomly generated the secret key
@@ -246,7 +260,7 @@ pub fn generate_ratls_cert(
 
     let pem_sk = secret_key
         .clone()
-        .to_sec1_pem(LineEnding::LF)
+        .to_pkcs8_pem(LineEnding::LF)
         .map_err(|_| Error::RatlsError("can't convert secret key to PEM".to_owned()))?
         .to_string();
 
@@ -257,9 +271,15 @@ pub fn generate_ratls_cert(
             "can't create SubjectPublicKeyInfo from public key: {e:?}"
         ))
     })?;
-    let mut builder =
-        CertificateBuilder::new(profile, serial_number, validity, subject, spki, &signer)
-            .map_err(|_| Error::RatlsError("failed to create certificate builder".to_owned()))?;
+    let mut builder = CertificateBuilder::new(
+        Profile::Manual { issuer: None },
+        serial_number,
+        validity,
+        subject,
+        spki,
+        &signer,
+    )
+    .map_err(|_| Error::RatlsError("failed to create certificate builder".to_owned()))?;
 
     match get_ratls_extension(&signer.verifying_key().to_sec1_bytes(), quote_extra_data)? {
         RatlsExtension::AMDTee(amd_ext) => builder
@@ -270,19 +290,22 @@ pub fn generate_ratls_cert(
             .map_err(|_| Error::RatlsError("can't create RA-TLS Intel extension".to_owned()))?,
     };
 
-    let subject_alternative_names = subject_alternative_names
-        .iter()
-        .map(|san| match san.parse::<Ipv4Addr>() {
-            Ok(ip) => GeneralName::from(IpAddr::V4(ip)),
-            Err(_) => GeneralName::DnsName(
-                Ia5String::try_from(san.to_string()).expect("SAN contains non-ascii characters"),
-            ),
-        })
-        .collect::<Vec<GeneralName>>();
+    if !subject_alternative_names.is_empty() {
+        let subject_alternative_names = subject_alternative_names
+            .iter()
+            .map(|san| match san.parse::<Ipv4Addr>() {
+                Ok(ip) => GeneralName::from(IpAddr::V4(ip)),
+                Err(_) => GeneralName::DnsName(
+                    Ia5String::try_from(san.to_string())
+                        .expect("SAN contains non-ascii characters"),
+                ),
+            })
+            .collect::<Vec<GeneralName>>();
 
-    builder
-        .add_extension(&SubjectAltName(subject_alternative_names))
-        .map_err(|_| Error::RatlsError("can't create SAN extension".to_owned()))?;
+        builder
+            .add_extension(&SubjectAltName(subject_alternative_names))
+            .map_err(|_| Error::RatlsError("can't create SAN extension".to_owned()))?;
+    }
 
     builder
         .add_extension(&BasicConstraints {
@@ -320,7 +343,6 @@ impl ServerCertVerifier for NoVerifier {
 /// Get the RATLS certificate from a `host`:`port`
 pub fn get_server_certificate(host: &str, port: u32) -> Result<Vec<u8>, Error> {
     let root_store = rustls::RootCertStore::empty();
-
     let mut socket = std::net::TcpStream::connect(format!("{host}:{port}"))
         .map_err(|_| Error::ConnectionError)?;
 
@@ -404,7 +426,14 @@ mod tests {
                 .try_into()
                 .unwrap();
 
-        assert!(verify_ratls(cert, None, Some(mrenclave), Some(mrsigner)).is_ok());
+        assert!(verify_ratls(
+            cert,
+            Some(TeeMeasurement::Sgx {
+                mr_signer: mrsigner,
+                mr_enclave: mrenclave
+            })
+        )
+        .is_ok());
     }
 
     #[test]
@@ -417,6 +446,6 @@ mod tests {
                 .try_into()
                 .unwrap();
 
-        assert!(verify_ratls(cert, Some(measurement), None, None).is_ok());
+        assert!(verify_ratls(cert, Some(TeeMeasurement::Sev(measurement))).is_ok());
     }
 }

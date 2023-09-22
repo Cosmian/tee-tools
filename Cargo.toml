@@ -31,7 +31,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
 spki = "0.7"
-p256 = { version = "0.13", features = ["arithmetic"] }
+p256 = { version = "0.13", features = ["arithmetic", "pkcs8"] }
 thiserror = "1.0"
-x509-cert = { version = "0.2", features = ["builder"] }
+x509-cert = { version = "0.2", features = ["builder", "hazmat"] }
 x509-parser = "0.15"
