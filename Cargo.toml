@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "pccs_client",
     "ratls",
     "rafs_tool",
     "ratls_certtool",
