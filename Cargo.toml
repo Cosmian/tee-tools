@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "maa_client",
     "pccs_client",
     "ratls",
     "rafs_tool",
@@ -20,7 +21,7 @@ curve25519-dalek = "3.2"
 der = { version = "0.7", features = ["alloc", "derive", "flagset", "oid"] }
 ecdsa = { version = "0.16", features = ["sha2", "spki"] }
 elliptic-curve = "0.13"
-hex = "0.4"
+hex = { version = "0.4", features = ["serde"] }
 hkdf = "0.12"
 log = "0.4"
 openssl = { version = "0.10", features = ["vendored"] }
