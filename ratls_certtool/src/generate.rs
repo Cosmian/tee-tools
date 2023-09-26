@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use clap::Args;
-use ratls::generate_ratls_cert;
+use ratls::generate::generate_ratls_cert;
 use std::fs;
 use std::path::PathBuf;
 

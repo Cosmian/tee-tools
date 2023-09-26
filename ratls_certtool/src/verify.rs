@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Args;
 use hex::decode;
-use ratls::{verify_ratls, TeeMeasurement};
+use ratls::{verify::verify_ratls, TeeMeasurement};
 use sgx_quote::mrsigner::compute_mr_signer;
 use std::fs;
 use std::path::PathBuf;
