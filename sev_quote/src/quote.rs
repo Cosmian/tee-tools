@@ -46,7 +46,7 @@ const KDS_VLEK: &str = "/vlek/v1";
 const KDS_CERT_CHAIN: &str = "cert_chain";
 const KDS_CRL: &str = "crl";
 const SEV_PROD_NAME: &str = "Milan";
-const SEV_REPORT_DATA_SIZE: usize = 64;
+pub const SEV_REPORT_DATA_SIZE: usize = 64;
 
 #[repr(C)]
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -67,6 +67,7 @@ impl From<(AttestationReport, Vec<CertTableEntry>)> for SEVQuote {
 /// Get the quote of the SEV VM
 ///
 /// Source: <https://www.amd.com/content/dam/amd/en/documents/developer/58217-epyc-9004-ug-platform-attestation-using-virtee-snp.pdf>
+#[cfg(target_os = "linux")]
 pub fn get_quote(user_report_data: &[u8]) -> Result<SEVQuote, Error> {
     // Open a connection to the firmware.
     let mut fw = Firmware::open()?;

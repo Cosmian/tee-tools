@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf};
 use anyhow::{anyhow, Result};
 use clap::Args;
 use pem_rfc7468::LineEnding;
-use ratls::get_server_certificate;
+use ratls::verify::get_server_certificate;
 
 /// Fetch an RATLS certificate from a domain name
 #[derive(Args, Debug)]
