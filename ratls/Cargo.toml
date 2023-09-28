@@ -15,8 +15,7 @@ p256 = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 rustls = { version = "0.21", features = ["dangerous_configuration"] }
-sev_quote = { path = "../sev_quote" }
-sgx_quote = { path = "../sgx_quote" }
+tee_attestation = { path = "../tee_attestation" }
 sha2 = { workspace = true }
 spki = { workspace = true }
 thiserror = { workspace = true }

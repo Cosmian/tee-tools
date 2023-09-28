@@ -15,13 +15,13 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     time::Duration,
 };
+use tee_attestation::{get_key, get_quote, guess_tee, TeeType};
 use x509_cert::ext::pkix::BasicConstraints;
 
 use crate::{
     error::Error,
     extension::{AMDRatlsSExtension, IntelRatlsExtension, RatlsExtension},
 };
-use crate::{guess_tee, TeeType};
 use x509_cert::{
     builder::{Builder, CertificateBuilder, Profile},
     der::asn1::OctetString,
@@ -31,18 +31,18 @@ use x509_cert::{
     time::Validity,
 };
 
-/// Generate the RATLS X509 extension containg the quote
+/// Build the report data from ratls public key and some extra data
 ///
-/// The quote report data contains the sha256 of the certificate public key
-/// and some 32 arbitrary extra bytes.
-pub fn get_ratls_extension(
-    ratls_public_key: &[u8],
+/// The first 32 bytes are the sha256 of the ratls public key
+/// The last 32 bytes are the extra data if some
+pub fn forge_report_data(
+    ratls_public_key: &ecdsa::VerifyingKey<p256::NistP256>,
     extra_data: Option<[u8; 32]>,
-) -> Result<RatlsExtension, Error> {
+) -> Result<Vec<u8>, Error> {
     let mut hasher = Sha256::new();
 
     // Hash the public key of the certificate
-    hasher.update(ratls_public_key);
+    hasher.update(&ratls_public_key.to_sec1_bytes());
 
     let mut user_report_data = hasher.finalize()[..].to_vec();
 
@@ -51,22 +51,28 @@ pub fn get_ratls_extension(
         user_report_data.extend(extra_data);
     }
 
-    match guess_tee()? {
-        TeeType::Sev => {
-            let quote = sev_quote::quote::get_quote(&user_report_data)?;
-            let quote = bincode::serialize(&quote)
-                .map_err(|_| Error::InvalidFormat("Can't serialize the SEV quote".to_owned()))?;
+    Ok(user_report_data)
+}
 
-            Ok(RatlsExtension::AMDTee(AMDRatlsSExtension::from(
-                OctetString::new(&quote[..]).map_err(|_| Error::UnsupportedTeeError)?,
-            )))
-        }
-        TeeType::Sgx => {
-            let quote = sgx_quote::quote::get_quote(&user_report_data)?;
-            Ok(RatlsExtension::IntelTee(IntelRatlsExtension::from(
-                OctetString::new(&quote[..]).map_err(|_| Error::UnsupportedTeeError)?,
-            )))
-        }
+/// Generate the RATLS X509 extension containg the quote
+///
+/// The quote report data contains the sha256 of the certificate public key
+/// and some 32 arbitrary extra bytes.
+pub fn get_ratls_extension(
+    ratls_public_key: &ecdsa::VerifyingKey<p256::NistP256>,
+    extra_data: Option<[u8; 32]>,
+) -> Result<RatlsExtension, Error> {
+    let user_report_data = forge_report_data(ratls_public_key, extra_data)?;
+    let quote = get_quote(&user_report_data)?;
+
+    match guess_tee()? {
+        /* TODO: remove that after sgx::get_quote refactor */
+        TeeType::Sev => Ok(RatlsExtension::AMDTee(AMDRatlsSExtension::from(
+            OctetString::new(quote).map_err(|_| Error::UnsupportedTeeError)?,
+        ))),
+        TeeType::Sgx => Ok(RatlsExtension::IntelTee(IntelRatlsExtension::from(
+            OctetString::new(quote).map_err(|_| Error::UnsupportedTeeError)?,
+        ))),
     }
 }
 
@@ -96,11 +102,7 @@ pub fn generate_ratls_cert(
     } else {
         // Derive the secret key from the tee measurements
         // No salt are used: the key will always be the same for a given measurement
-        let secret = match guess_tee()? {
-            TeeType::Sgx => sgx_quote::key::get_key(false)?,
-            TeeType::Sev => sev_quote::key::get_key(false)?,
-        };
-
+        let secret = get_key(false)?;
         let sk = ScalarPrimitive::from_slice(&secret)?;
         p256::SecretKey::new(sk)
     };
@@ -128,7 +130,7 @@ pub fn generate_ratls_cert(
     )
     .map_err(|_| Error::RatlsError("failed to create certificate builder".to_owned()))?;
 
-    match get_ratls_extension(&signer.verifying_key().to_sec1_bytes(), quote_extra_data)? {
+    match get_ratls_extension(signer.verifying_key(), quote_extra_data)? {
         RatlsExtension::AMDTee(amd_ext) => builder
             .add_extension(&amd_ext)
             .map_err(|_| Error::RatlsError("can't create RA-TLS AMD extension".to_owned()))?,

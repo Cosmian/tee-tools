@@ -1,0 +1,19 @@
+[package]
+name = "tee_attestation"
+version = "0.1.0"
+edition = "2021"
+license = "MIT/Apache-2.0"
+description = "TEE attestation report parsing and verification"
+
+[lib]
+name = "tee_attestation"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+bincode = { workspace = true }
+sev_quote = { path = "../sev_quote" }
+sgx_quote = { path = "../sgx_quote" }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+env_logger = "0.10"
