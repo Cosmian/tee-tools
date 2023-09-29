@@ -5,16 +5,15 @@ use rustls::{
     client::{ServerCertVerifier, ServerName},
     Certificate, Error as RustTLSError,
 };
-use sev_quote::{self, quote::SEVQuote};
-use sha2::{Digest, Sha256};
 use spki::DecodePublicKey;
 use std::io::Write;
 use std::{str::FromStr, time::SystemTime};
+use tee_attestation::{verify_quote, TeeMeasurement};
 
 use crate::{
     error::Error,
     extension::{AMD_RATLS_EXTENSION_OID, INTEL_RATLS_EXTENSION_OID},
-    TeeMeasurement, TeeType,
+    generate::forge_report_data,
 };
 use x509_parser::{
     oid_registry::Oid,
@@ -28,10 +27,7 @@ use x509_parser::{
 /// - The MRsigner
 /// - The report data content
 /// - The quote collaterals
-pub fn verify_ratls(
-    pem_ratls_cert: &[u8],
-    measurement: Option<TeeMeasurement>,
-) -> Result<(), Error> {
+pub fn verify_ratls(pem_ratls_cert: &[u8], measurement: TeeMeasurement) -> Result<(), Error> {
     let (rem, pem) = parse_x509_pem(pem_ratls_cert)?;
 
     if !rem.is_empty() || &pem.label != "CERTIFICATE" {
@@ -43,88 +39,32 @@ pub fn verify_ratls(
     let ratls_cert = pem
         .parse_x509()
         .map_err(|e| Error::X509ParserError(e.into()))?;
+    let pk = VerifyingKey::from_public_key_der(ratls_cert.public_key().raw)?;
 
     // Get the quote from the certificate
-    let (raw_quote, tee_type) = extract_quote(&ratls_cert)?;
+    let raw_quote = extract_quote(&ratls_cert)?;
+    let expected_report_data = forge_report_data(&pk, None)?;
 
-    match tee_type {
-        TeeType::Sev => {
-            let quote: SEVQuote = bincode::deserialize(&raw_quote).map_err(|_| {
-                Error::InvalidFormat("Can't deserialize the SEV quote bytes".to_owned())
-            })?;
-
-            verify_report_data(&quote.report.report_data, &ratls_cert)?;
-
-            let measurement = if let Some(TeeMeasurement::Sev(m)) = measurement {
-                Some(m)
-            } else {
-                None
-            };
-
-            // Verify the quote itself
-            Ok(sev_quote::quote::verify_quote(
-                &quote.report,
-                &quote.certs,
-                measurement,
-            )?)
-        }
-        TeeType::Sgx => {
-            let (quote, _, _, _) = sgx_quote::quote::parse_quote(&raw_quote)?;
-
-            verify_report_data(&quote.report_body.report_data, &ratls_cert)?;
-
-            let (mr_enclave, mr_signer) = if let Some(TeeMeasurement::Sgx {
-                mr_signer: s,
-                mr_enclave: e,
-            }) = measurement
-            {
-                (Some(e), Some(s))
-            } else {
-                (None, None)
-            };
-
-            // Verify the quote itself
-            Ok(sgx_quote::quote::verify_quote(
-                &raw_quote, mr_enclave, mr_signer,
-            )?)
-        }
-    }
-}
-
-/// Verify the first bytes of the report data
-/// It should be the fingerprint of the certificate public key (DER format)
-fn verify_report_data(report_data: &[u8], ratls_cert: &X509Certificate) -> Result<(), Error> {
-    let mut hasher = Sha256::new();
-
-    let public_key = ratls_cert.public_key().raw;
-    let pk = VerifyingKey::from_public_key_der(public_key)?;
-    let public_key = pk.to_sec1_bytes();
-    hasher.update(public_key);
-
-    let expected_digest = &hasher.finalize()[..];
-
-    if &report_data[0..32] != expected_digest {
-        return Err(Error::VerificationFailure(
-            "Failed to verify the RA-TLS public key fingerprint".to_owned(),
-        ));
-    }
-
-    Ok(())
+    Ok(verify_quote(
+        &raw_quote,
+        &expected_report_data,
+        measurement,
+    )?)
 }
 
 /// Extract the quote from an RATLS certificate
-fn extract_quote(ratls_cert: &X509Certificate) -> Result<(Vec<u8>, TeeType), Error> {
+fn extract_quote(ratls_cert: &X509Certificate) -> Result<Vec<u8>, Error> {
     let intel_ext_oid = Oid::from_str(INTEL_RATLS_EXTENSION_OID).map_err(|_| Error::Asn1Error)?;
     let amd_ext_oid = Oid::from_str(AMD_RATLS_EXTENSION_OID).map_err(|_| Error::Asn1Error)?;
 
     // Try to extract SGX quote
     if let Some(quote) = ratls_cert.get_extension_unique(&intel_ext_oid)? {
-        return Ok((quote.value.to_vec(), TeeType::Sgx));
+        return Ok(quote.value.to_vec());
     }
 
     // Try to extract SEV quote
     if let Some(quote) = ratls_cert.get_extension_unique(&amd_ext_oid)? {
-        return Ok((quote.value.to_vec(), TeeType::Sev));
+        return Ok(quote.value.to_vec());
     }
 
     // Not a RATLS certificate
@@ -187,6 +127,7 @@ pub fn get_server_certificate(host: &str, port: u32) -> Result<Vec<u8>, Error> {
 mod tests {
     use super::*;
     use base64::{engine::general_purpose, Engine as _};
+    use tee_attestation::{SevMeasurement, SgxMeasurement};
 
     #[test]
     fn test_get_server_certificate() {
@@ -229,18 +170,17 @@ mod tests {
                 .unwrap()
                 .try_into()
                 .unwrap();
-        let mrsigner =
-            hex::decode(b"c1c161d0dd996e8a9847de67ea2c00226761f7715a2c422d3012ac10795a1ef5")
-                .unwrap()
-                .try_into()
-                .unwrap();
+        let public_signer_key = include_str!("../data/signer-key.pem");
 
         assert!(verify_ratls(
             cert,
-            Some(TeeMeasurement::Sgx {
-                mr_signer: mrsigner,
-                mr_enclave: mrenclave
-            })
+            TeeMeasurement {
+                sev: None,
+                sgx: Some(SgxMeasurement {
+                    public_signer_key_pem: public_signer_key.to_string(),
+                    mr_enclave: mrenclave
+                })
+            }
         )
         .is_ok());
     }
@@ -255,6 +195,13 @@ mod tests {
                 .try_into()
                 .unwrap();
 
-        assert!(verify_ratls(cert, Some(TeeMeasurement::Sev(measurement))).is_ok());
+        assert!(verify_ratls(
+            cert,
+            TeeMeasurement {
+                sev: Some(SevMeasurement(measurement)),
+                sgx: None
+            }
+        )
+        .is_ok());
     }
 }

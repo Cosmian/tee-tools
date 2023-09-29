@@ -19,9 +19,7 @@ pub enum Error {
     #[error("ServerCertificateError")]
     ServerCertificateError,
     #[error(transparent)]
-    SEVQuoteError(#[from] sev_quote::error::Error),
-    #[error(transparent)]
-    SGXQuoteError(#[from] sgx_quote::error::Error),
+    TeeAttestationError(#[from] tee_attestation::error::Error),
     #[error("VerificationFailure: {0}")]
     VerificationFailure(String),
     #[error("RatlsError: {0}")]

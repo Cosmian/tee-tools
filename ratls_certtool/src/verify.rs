@@ -1,10 +1,10 @@
 use anyhow::Result;
 use clap::Args;
 use hex::decode;
-use ratls::{verify::verify_ratls, TeeMeasurement};
-use sgx_quote::mrsigner::compute_mr_signer;
+use ratls::verify::verify_ratls;
 use std::fs;
 use std::path::PathBuf;
+use tee_attestation::{SevMeasurement, SgxMeasurement, TeeMeasurement};
 
 /// Verify a RATLS certificate
 #[derive(Args, Debug)]
@@ -24,17 +24,13 @@ pub struct VerifyArgs {
 
     /// Path of the SGX enclave signer key (to compute the SGX mrsigner)
     #[arg(long)]
-    signer_key: Option<PathBuf>,
+    public_signer_key: Option<PathBuf>,
 }
 
 impl VerifyArgs {
     pub fn run(&self) -> Result<()> {
-        let mr_signer = if let Some(path) = &self.signer_key {
-            Some(
-                compute_mr_signer(&fs::read_to_string(path)?)?
-                    .as_slice()
-                    .try_into()?,
-            )
+        let public_signer_key = if let Some(path) = &self.public_signer_key {
+            Some(fs::read_to_string(path)?)
         } else {
             None
         };
@@ -51,10 +47,21 @@ impl VerifyArgs {
             None
         };
 
-        let measurement = match (mr_signer, mrenclave, sev_measurement) {
-            (None, None, None) => None,
-            (Some(s), Some(e), None) => Some(TeeMeasurement::Sgx { mr_signer: s, mr_enclave: e }),
-            (None, None, Some(m)) => Some(TeeMeasurement::Sev (m)),
+        let measurement = match (public_signer_key, mrenclave, sev_measurement) {
+            (None, None, None) => TeeMeasurement {
+                sgx: None,
+                sev: None
+            },
+            (Some(s), Some(e), None) => TeeMeasurement {
+                sgx: Some(SgxMeasurement {
+                    public_signer_key_pem: s.to_string(), mr_enclave: e
+                }),
+                sev: None
+            },
+            (None, None, Some(m)) => TeeMeasurement {
+                sgx: None,
+                sev: Some(SevMeasurement(m))
+            },
             _ => anyhow::bail!("Bad measurements combination. It should be [None | (--mrenclave & --signer_key) | measurement]")
         };
 

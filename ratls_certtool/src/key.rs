@@ -1,10 +1,10 @@
 use anyhow::{anyhow, Result};
 use clap::Args;
 use curve25519_dalek::{constants::X25519_BASEPOINT, scalar::Scalar};
-use ratls::{guess_tee, TeeType};
 use std::convert::TryInto;
 use std::fs;
 use std::path::PathBuf;
+use tee_attestation::get_key;
 
 /// Generate a X25519 key derived from the measurements
 #[derive(Args, Debug)]
@@ -23,10 +23,7 @@ impl KeyArgs {
         let public_key_path = self.output.join(PathBuf::from("x25519_sk.bin"));
         let private_key_path = self.output.join(PathBuf::from("x25519_pk.bin"));
 
-        let secret = match guess_tee()? {
-            TeeType::Sgx => sgx_quote::key::get_key(!self.no_salt)?,
-            TeeType::Sev => sev_quote::key::get_key(!self.no_salt)?,
-        };
+        let secret = get_key(!self.no_salt)?;
         let secret: [u8; 32] = secret
             .try_into()
             .map_err(|_| anyhow!("unexpected X25519 secret key"))?;
