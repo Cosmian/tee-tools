@@ -5,6 +5,7 @@ use rustls::{
     client::{ServerCertVerifier, ServerName},
     Certificate, Error as RustTLSError,
 };
+use sha2::{Digest, Sha256};
 use spki::DecodePublicKey;
 use std::io::Write;
 use std::{str::FromStr, time::SystemTime};
@@ -13,12 +14,34 @@ use tee_attestation::{verify_quote, TeeMeasurement};
 use crate::{
     error::Error,
     extension::{AMD_RATLS_EXTENSION_OID, INTEL_RATLS_EXTENSION_OID},
-    generate::forge_report_data,
 };
 use x509_parser::{
     oid_registry::Oid,
     prelude::{parse_x509_pem, X509Certificate},
 };
+
+/// Build the report data from ratls public key and some extra data
+///
+/// The first 32 bytes are the sha256 of the ratls public key
+/// The last 32 bytes are the extra data if some
+pub fn forge_report_data(
+    ratls_public_key: &ecdsa::VerifyingKey<p256::NistP256>,
+    extra_data: Option<[u8; 32]>,
+) -> Result<Vec<u8>, Error> {
+    let mut hasher = Sha256::new();
+
+    // Hash the public key of the certificate
+    hasher.update(&ratls_public_key.to_sec1_bytes());
+
+    let mut user_report_data = hasher.finalize()[..].to_vec();
+
+    // Concat additional data if any
+    if let Some(extra_data) = extra_data {
+        user_report_data.extend(extra_data);
+    }
+
+    Ok(user_report_data)
+}
 
 /// Verify the RATLS certificate.
 ///

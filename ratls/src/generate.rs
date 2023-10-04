@@ -7,7 +7,6 @@ use rand::RngCore;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaChaRng;
 
-use sha2::{Digest, Sha256};
 use spki::{EncodePublicKey, SubjectPublicKeyInfoOwned};
 use std::str::FromStr;
 use std::{
@@ -18,6 +17,7 @@ use std::{
 use tee_attestation::{get_key, get_quote, guess_tee, TeeType};
 use x509_cert::ext::pkix::BasicConstraints;
 
+use crate::verify::forge_report_data;
 use crate::{
     error::Error,
     extension::{AMDRatlsSExtension, IntelRatlsExtension, RatlsExtension},
@@ -30,29 +30,6 @@ use x509_cert::{
     serial_number::SerialNumber,
     time::Validity,
 };
-
-/// Build the report data from ratls public key and some extra data
-///
-/// The first 32 bytes are the sha256 of the ratls public key
-/// The last 32 bytes are the extra data if some
-pub fn forge_report_data(
-    ratls_public_key: &ecdsa::VerifyingKey<p256::NistP256>,
-    extra_data: Option<[u8; 32]>,
-) -> Result<Vec<u8>, Error> {
-    let mut hasher = Sha256::new();
-
-    // Hash the public key of the certificate
-    hasher.update(&ratls_public_key.to_sec1_bytes());
-
-    let mut user_report_data = hasher.finalize()[..].to_vec();
-
-    // Concat additional data if any
-    if let Some(extra_data) = extra_data {
-        user_report_data.extend(extra_data);
-    }
-
-    Ok(user_report_data)
-}
 
 /// Generate the RATLS X509 extension containg the quote
 ///

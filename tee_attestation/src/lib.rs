@@ -53,6 +53,7 @@ pub fn parse_quote(raw_quote: &[u8]) -> Result<TeeQuote, Error> {
 }
 
 // Generate a quote for the current tee
+#[cfg(target_os = "linux")]
 pub fn get_quote(report_data: &[u8]) -> Result<Vec<u8>, Error> {
     match guess_tee()? {
         TeeType::Sev => {
@@ -122,6 +123,7 @@ pub fn verify_quote(
 }
 
 /// Get a key from the tee
+#[cfg(target_os = "linux")]
 pub fn get_key(use_salt: bool) -> Result<Vec<u8>, Error> {
     match guess_tee()? {
         TeeType::Sgx => Ok(sgx_quote::key::get_key(use_salt)?),
