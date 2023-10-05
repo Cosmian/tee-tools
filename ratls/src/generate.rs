@@ -3,9 +3,9 @@ use der::{asn1::Ia5String, pem::LineEnding, EncodePem};
 use ecdsa::elliptic_curve::ScalarPrimitive;
 use p256::ecdsa::DerSignature;
 use p256::pkcs8::EncodePrivateKey;
-use rand::RngCore;
-use rand_chacha::rand_core::SeedableRng;
-use rand_chacha::ChaChaRng;
+use p256::SecretKey;
+use rand_chacha::rand_core::{RngCore, SeedableRng};
+use rand_chacha::ChaCha20Rng;
 
 use spki::{EncodePublicKey, SubjectPublicKeyInfoOwned};
 use std::str::FromStr;
@@ -30,6 +30,31 @@ use x509_cert::{
     serial_number::SerialNumber,
     time::Validity,
 };
+
+/// Define the way to generate the RATLS secret key
+pub enum RatlsKeyGenerationType {
+    /// Randomly generated
+    Random,
+    /// Derived from the tee parameters (if None: the key is fully deterministic)
+    InstanceBounded(Option<Vec<u8>>),
+}
+
+impl RatlsKeyGenerationType {
+    pub fn generate_key(&self) -> Result<SecretKey, Error> {
+        let mut rng = ChaCha20Rng::from_entropy();
+
+        Ok(match self {
+            RatlsKeyGenerationType::Random => p256::SecretKey::random(&mut rng),
+            RatlsKeyGenerationType::InstanceBounded(salt) => {
+                // Derive the secret key from the tee measurements
+                // No salt are used: the key will always be the same for a given measurement
+                let secret = get_key(salt.as_deref())?;
+                let sk = ScalarPrimitive::from_slice(&secret)?;
+                p256::SecretKey::new(sk)
+            }
+        })
+    }
+}
 
 /// Generate the RATLS X509 extension containg the quote
 ///
@@ -62,27 +87,18 @@ pub fn generate_ratls_cert(
     subject_alternative_names: Vec<&str>,
     days_before_expiration: u64,
     quote_extra_data: Option<[u8; 32]>,
-    deterministic: bool,
+    key_generation_type: RatlsKeyGenerationType,
 ) -> Result<(String, String), Error> {
-    let mut csrng = ChaChaRng::from_entropy();
+    let mut rng = ChaCha20Rng::from_entropy();
 
-    let serial_number = SerialNumber::from(csrng.next_u32());
+    let serial_number = SerialNumber::from(rng.next_u32());
     let validity = Validity::from_now(Duration::new(days_before_expiration * 24 * 60 * 60, 0))
         .map_err(|_| Error::RatlsError("unexpected expiration validity".to_owned()))?;
 
     let subject =
         Name::from_str(subject).map_err(|_| Error::RatlsError("can't parse subject".to_owned()))?;
 
-    let secret_key = if !deterministic {
-        // Randomly generated the secret key
-        p256::SecretKey::random(&mut csrng)
-    } else {
-        // Derive the secret key from the tee measurements
-        // No salt are used: the key will always be the same for a given measurement
-        let secret = get_key(false)?;
-        let sk = ScalarPrimitive::from_slice(&secret)?;
-        p256::SecretKey::new(sk)
-    };
+    let secret_key = key_generation_type.generate_key()?;
 
     let pem_sk = secret_key
         .clone()

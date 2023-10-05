@@ -12,7 +12,6 @@ const-oid = { workspace = true }
 der = { workspace = true }
 ecdsa = { workspace = true }
 p256 = { workspace = true }
-rand = { workspace = true }
 rand_chacha = { workspace = true }
 rustls = { version = "0.21", features = ["dangerous_configuration"] }
 tee_attestation = { path = "../tee_attestation" }

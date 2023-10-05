@@ -16,7 +16,6 @@ hex = { workspace = true }
 hkdf = { workspace = true }
 log = { workspace = true }
 p256 = { workspace = true }
-rand_chacha = { workspace = true }
 reqwest = { workspace = true }
 rsa = { workspace = true }
 scroll = { version = "0.11", features = ["derive"] }

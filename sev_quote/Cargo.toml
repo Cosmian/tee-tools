@@ -16,7 +16,6 @@ bincode = { workspace = true }
 hex = { workspace = true }
 hkdf = { workspace = true }
 log = { workspace = true }
-rand_chacha = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 sev = { git = "https://github.com/Cosmian/sev", branch = "main", features = [
