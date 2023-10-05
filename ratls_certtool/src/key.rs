@@ -13,9 +13,9 @@ pub struct KeyArgs {
     #[arg(short, long, default_value = PathBuf::from(".").into_os_string())]
     output: PathBuf,
 
-    /// If set, no salt is used when deriving the key
+    /// If set, this salt is used when deriving the key. If none, the key is always the same for a given code instance.
     #[arg(long, action)]
-    no_salt: bool,
+    salt: Option<String>,
 }
 
 impl KeyArgs {
@@ -23,7 +23,13 @@ impl KeyArgs {
         let public_key_path = self.output.join(PathBuf::from("x25519_sk.bin"));
         let private_key_path = self.output.join(PathBuf::from("x25519_pk.bin"));
 
-        let secret = get_key(!self.no_salt)?;
+        let salt = if let Some(salt) = &self.salt {
+            Some(hex::decode(salt)?)
+        } else {
+            None
+        };
+
+        let secret = get_key(salt.as_deref())?;
         let secret: [u8; 32] = secret
             .try_into()
             .map_err(|_| anyhow!("unexpected X25519 secret key"))?;

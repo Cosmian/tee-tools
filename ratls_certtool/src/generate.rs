@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use clap::Args;
-use ratls::generate::generate_ratls_cert;
+use ratls::generate::{generate_ratls_cert, RatlsKeyGenerationType};
 use std::fs;
 use std::path::PathBuf;
 
@@ -31,9 +31,17 @@ pub struct GenerateArgs {
     #[arg(short, long, default_value = PathBuf::from(".").into_os_string())]
     output: PathBuf,
 
-    /// Deterministic keys tied to the enclave or vm (by default it's randomly generated)
-    #[arg(long)]
-    deterministic: bool,
+    /// Randomly generate the RATLS secret key (default = true)
+    #[arg(long, default_value_t = true, conflicts_with_all = ["tee_secret_key", "tee_secret_key_no_salt"])]
+    random_secret_key: bool,
+
+    /// Generate a RATLS secret keys tied to the enclave or vm. The value is the salt used during the key derivation
+    #[arg(long, default_value = None, conflicts_with_all = ["random_secret_key", "tee_secret_key_no_salt"])]
+    tee_secret_key: Option<String>,
+
+    /// Generate a RATLS secret keys tied to the enclave or vm (without using salt during derivation)
+    #[arg(long, default_value_t = false, conflicts_with_all = ["tee_secret_key", "random_secret_key"])]
+    tee_secret_key_no_salt: bool,
 }
 
 impl GenerateArgs {
@@ -53,12 +61,20 @@ impl GenerateArgs {
             None
         };
 
+        let secret_key_type = if self.tee_secret_key_no_salt {
+            RatlsKeyGenerationType::InstanceBounded(None)
+        } else if let Some(salt) = &self.tee_secret_key {
+            RatlsKeyGenerationType::InstanceBounded(Some(hex::decode(salt)?))
+        } else {
+            RatlsKeyGenerationType::Random
+        };
+
         let (private_key, cert) = generate_ratls_cert(
             &self.subject,
             vec![&self.san],
             self.days,
             extra_data,
-            self.deterministic,
+            secret_key_type,
         )?;
 
         let key_path = self.output.join(PathBuf::from("key.ratls.pem"));

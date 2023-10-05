@@ -124,9 +124,9 @@ pub fn verify_quote(
 
 /// Get a key from the tee
 #[cfg(target_os = "linux")]
-pub fn get_key(use_salt: bool) -> Result<Vec<u8>, Error> {
+pub fn get_key(salt: Option<&[u8]>) -> Result<Vec<u8>, Error> {
     match guess_tee()? {
-        TeeType::Sgx => Ok(sgx_quote::key::get_key(use_salt)?),
-        TeeType::Sev => Ok(sev_quote::key::get_key(use_salt)?),
+        TeeType::Sgx => Ok(sgx_quote::key::get_key(salt)?),
+        TeeType::Sev => Ok(sev_quote::key::get_key(salt)?),
     }
 }
