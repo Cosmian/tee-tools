@@ -14,13 +14,16 @@ pub enum TeeQuote {
     Sgx(Box<SGXQuote>),
 }
 
+#[derive(Debug)]
 pub struct SgxMeasurement {
     pub public_signer_key_pem: String,
     pub mr_enclave: [u8; 32],
 }
 
+#[derive(Debug)]
 pub struct SevMeasurement(pub [u8; 48]);
 
+#[derive(Default, Debug)]
 pub struct TeeMeasurement {
     pub sgx: Option<SgxMeasurement>,
     pub sev: Option<SevMeasurement>,
