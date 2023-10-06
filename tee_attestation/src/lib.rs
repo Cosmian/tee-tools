@@ -42,6 +42,11 @@ pub fn guess_tee() -> Result<TeeType, Error> {
     Err(Error::UnsupportedTeeError)
 }
 
+/// Tell whether the current platform is a tee
+pub fn is_running_inside_tee() -> bool {
+    guess_tee().is_ok()
+}
+
 /// Parse a quote
 pub fn parse_quote(raw_quote: &[u8]) -> Result<TeeQuote, Error> {
     if let Ok(quote) = bincode::deserialize(raw_quote) {
