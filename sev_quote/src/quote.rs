@@ -210,7 +210,7 @@ fn verify_revocation_list(chain: &Chain) -> Result<(), Error> {
     if !res.is_empty() {
         return Err(Error::InvalidFormat(
             "Root CA CRL parsing failed".to_owned(),
-        ))?;
+        ));
     }
 
     // Verify that the crl has been signed by ARK

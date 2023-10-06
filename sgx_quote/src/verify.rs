@@ -301,7 +301,7 @@ pub(crate) fn verify_root_ca_crl(
     if !res.is_empty() {
         return Err(Error::InvalidFormat(
             "Root CA CRL parsing failed".to_owned(),
-        ))?;
+        ));
     }
 
     crl.verify_signature(root_ca.public_key())?;
@@ -363,7 +363,7 @@ pub(crate) fn verify_pck_cert_crl(
         CertificateRevocationList::from_der(&body).map_err(|e| Error::X509ParserError(e.into()))?;
 
     if !res.is_empty() {
-        return Err(Error::InvalidFormat("PCK CRL parsing failed".to_owned()))?;
+        return Err(Error::InvalidFormat("PCK CRL parsing failed".to_owned()));
     }
 
     crl.verify_signature(pck_ca_cert.public_key())
