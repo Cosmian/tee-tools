@@ -64,8 +64,12 @@ pub struct SgxPckExtension {
     pub pceid: [u8; PCEID_LEN],
     pub fmspc: [u8; FMSPC_LEN],
     pub sgx_type: SgxType,
-    pub platform_instance_id: [u8; PLATFORM_INSTANCE_ID_LEN],
-    pub configuration: Configuration,
+    // Value of Platform Instance ID.
+    // It is only relevant to PCK Certificates issued by PCK Platform CA.
+    pub platform_instance_id: Option<[u8; PLATFORM_INSTANCE_ID_LEN]>,
+    // Optional sequence of additional configuration settings.
+    // It is only relevant to PCK Certificates issued by PCK Platform CA.
+    pub configuration: Option<Configuration>,
 }
 
 impl SgxPckExtension {
@@ -103,8 +107,8 @@ impl SgxPckExtension {
             pceid: pceid.unwrap(),
             fmspc: fmspc.unwrap(),
             sgx_type: sgx_type.unwrap(),
-            platform_instance_id: platform_instance_id.unwrap(),
-            configuration: configuration.unwrap(),
+            platform_instance_id,
+            configuration,
         })
     }
 
@@ -213,14 +217,8 @@ fn parse_extensions<'a>(
         } = extension;
         if let Some(attr) = attributes.get_mut(&sgx_extension_id) {
             attr.parse_and_save(value)
-                .map_err(|_| SgxPckExtensionError::SgxPckParsingError)
-                .unwrap();
+                .map_err(|_| SgxPckExtensionError::SgxPckParsingError)?;
         } else {
-            return Err(SgxPckExtensionError::SgxPckParsingError);
-        }
-    }
-    for (_oid, attr) in attributes {
-        if attr.is_none() {
             return Err(SgxPckExtensionError::SgxPckParsingError);
         }
     }
@@ -404,8 +402,10 @@ mod tests {
 
     #[test]
     fn test_pck_extension_from_pem() {
-        let pck_pem_cert = include_bytes!("../data/pck_cert.pem");
+        let pck_cert_from_platform = include_bytes!("../data/pck_from_platform_ca.pem");
+        let pck_cert_from_processor = include_bytes!("../data/pck_from_processor_ca.pem");
 
-        assert!(SgxPckExtension::from_pem_certificate(pck_pem_cert).is_ok());
+        assert!(SgxPckExtension::from_pem_certificate(pck_cert_from_platform).is_ok());
+        assert!(SgxPckExtension::from_pem_certificate(pck_cert_from_processor).is_ok());
     }
 }
