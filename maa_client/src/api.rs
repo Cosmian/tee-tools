@@ -1,9 +1,8 @@
 use std::str::FromStr;
 
-use crate::error::Error;
+use crate::{error::Error, jwk::MaaJwks};
 
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD as Base64Url, Engine};
-use jsonwebtoken_rustcrypto::jwk::JWKS;
+use base64::{engine::general_purpose, Engine as _};
 use reqwest::StatusCode;
 use serde_json::{json, Map, Value};
 
@@ -11,14 +10,14 @@ use serde_json::{json, Map, Value};
 ///
 /// # Returns
 ///
-/// Either JSON Web Key Set [`JWKS`] or [`Error`].
+/// Either JSON Web Key Set [`MaaJwks`] or [`Error`].
 ///
 /// # External documentation
 ///
 /// See [`Signing Certificates from MAA API`].
 ///
 /// [`Signing Certificates from MAA API`]: https://learn.microsoft.com/en-us/rest/api/attestation/signing-certificates/get
-pub fn maa_certificates(maa_url: &str) -> Result<JWKS, Error> {
+pub fn maa_certificates(maa_url: &str) -> Result<MaaJwks, Error> {
     let url = reqwest::Url::from_str(&format!("{maa_url}/certs"))
         .map_err(|e| Error::BadURLError(e.to_string()))?;
 
@@ -26,8 +25,8 @@ pub fn maa_certificates(maa_url: &str) -> Result<JWKS, Error> {
 
     match r.status() {
         StatusCode::OK => {
-            let jwks: JWKS = r
-                .json()
+            let jwks = r
+                .json::<MaaJwks>()
                 .map_err(|_| Error::DecodeError("can't deserialize JSON".to_owned()))?;
 
             Ok(jwks)
@@ -42,7 +41,7 @@ pub fn maa_certificates(maa_url: &str) -> Result<JWKS, Error> {
             let code = error.get("code").ok_or(Error::MaaResponseError(
                 "can't get code in error response".to_owned(),
             ))?;
-            let message = error.get("messge").ok_or(Error::MaaResponseError(
+            let message = error.get("message").ok_or(Error::MaaResponseError(
                 "can't get message in error response".to_owned(),
             ))?;
 
@@ -60,7 +59,7 @@ pub fn maa_certificates(maa_url: &str) -> Result<JWKS, Error> {
 ///
 /// # Returns
 ///
-/// Either [`String`] within RS256 JWT token to be verified or [`Error`].
+/// Either [`String`] with RS256 JWT token or [`Error`].
 ///
 /// # External documentation
 ///
@@ -78,13 +77,13 @@ pub fn maa_attest_sgx_enclave(
     )
     .map_err(|e| Error::BadURLError(e.to_string()))?;
 
-    let mut payload = json!({"quote": Base64Url.encode(quote)});
+    let mut payload = json!({"quote": general_purpose::URL_SAFE_NO_PAD.encode(quote)});
 
     if let Some(enclave_held_data) = enclave_held_data {
         let root_object = payload.as_object_mut().expect("no object found in JSON");
         root_object.insert(
             String::from("runtimeData"),
-            json!({"data": Base64Url.encode(enclave_held_data), "dataType": "Binary"}),
+            json!({"data": general_purpose::URL_SAFE_NO_PAD.encode(enclave_held_data), "dataType": "Binary"}),
         );
     }
 
@@ -105,7 +104,12 @@ pub fn maa_attest_sgx_enclave(
                 "failed to get token field in MAA response".to_owned(),
             ))?;
 
-            Ok(token.to_string())
+            Ok(token
+                .as_str()
+                .ok_or(Error::DecodeError(
+                    "Failed to decode JSON key 'token'".to_owned(),
+                ))?
+                .to_owned())
         }
         s => {
             let body = r
@@ -117,7 +121,7 @@ pub fn maa_attest_sgx_enclave(
             let code = error.get("code").ok_or(Error::MaaResponseError(
                 "can't get code in error response".to_owned(),
             ))?;
-            let message = error.get("messge").ok_or(Error::MaaResponseError(
+            let message = error.get("message").ok_or(Error::MaaResponseError(
                 "can't get message in error response".to_owned(),
             ))?;
 
