@@ -85,17 +85,21 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<SEVQuote, Error> {
     };
 
     // Request a standard attestation report.
-    Ok(SEVQuote::from(
-        fw.get_ext_report(
-            None,
-            Some(
-                user_report_data
-                    .try_into()
-                    .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
-            ),
-            None,
-        )?,
-    ))
+    let report = fw.get_report(
+        // get_ext_report
+        None,
+        Some(
+            user_report_data
+                .try_into()
+                .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
+        ),
+        None,
+    )?;
+
+    Ok(SEVQuote {
+        report,
+        certs: vec![],
+    })
 }
 
 /// The verification of the quote includes:
