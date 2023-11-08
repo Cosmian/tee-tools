@@ -5,6 +5,8 @@ use sha2::{Digest, Sha256};
 use tdx_quote::policy::TdxQuoteVerificationPolicy;
 use tdx_quote::quote::Quote as TDXQuote;
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 pub mod error;
 
 pub enum TeeType {
@@ -19,7 +21,7 @@ pub enum TeeQuote {
     Tdx(Box<TDXQuote>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct SgxMeasurement {
     pub mr_signer: [u8; 32],
     pub mr_enclave: [u8; 32],
@@ -30,7 +32,7 @@ impl TryFrom<(&[u8; 32], &str)> for SgxMeasurement {
     fn try_from(attr: (&[u8; 32], &str)) -> Result<Self, Error> {
         Ok(SgxMeasurement {
             mr_enclave: *attr.0,
-            mr_signer: compute_mr_signer(attr.1.clone())?
+            mr_signer: compute_mr_signer(attr.1)?
                 .as_slice()
                 .try_into()
                 .map_err(|e| {
@@ -39,14 +41,39 @@ impl TryFrom<(&[u8; 32], &str)> for SgxMeasurement {
         })
     }
 }
-#[derive(Debug)]
-pub struct SevMeasurement(pub [u8; 48]);
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct SevMeasurement(
+    #[serde(serialize_with = "as_hex", deserialize_with = "from_hex")] pub [u8; 48],
+);
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct TeeMeasurement {
     pub sgx: Option<SgxMeasurement>,
     pub sev: Option<SevMeasurement>,
     pub tdx: Option<TdxQuoteVerificationPolicy>,
+}
+
+/// Serializes `buffer` to a lowercase hex string.
+pub fn as_hex<T, S>(buffer: &T, serializer: S) -> Result<S::Ok, S::Error>
+where
+    T: AsRef<[u8]>,
+    S: Serializer,
+{
+    serializer.serialize_str(&hex::encode(buffer))
+}
+
+/// Deserializes a lowercase hex string to a `Vec<u8>`.
+pub fn from_hex<'de, D>(deserializer: D) -> Result<[u8; 48], D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::Error;
+    String::deserialize(deserializer).and_then(|string| {
+        hex::decode(string)
+            .map_err(|err| Error::custom(err.to_string()))?
+            .try_into()
+            .map_err(|_| Error::custom("Not enought bytes found when deserializing"))
+    })
 }
 
 /// Tell whether the platform is an SGX or an SEV processor

@@ -11,8 +11,11 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 bincode = { workspace = true }
+hex = { workspace = true }
 sha2 = "0.10"
 sev_quote = { path = "../sev_quote" }
+serde = { workspace = true }
+serde_json = { workspace = true }
 sgx_quote = { path = "../sgx_quote" }
 tdx_quote = { path = "../tdx_quote" }
 thiserror = { workspace = true }

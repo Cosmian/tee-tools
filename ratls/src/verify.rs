@@ -222,9 +222,7 @@ mod tests {
 
         let measurement =
             hex::decode(b"c2c84b9364fc9f0f54b04534768c860c6e0e386ad98b96e8b98eca46ac8971d05c531ba48373f054c880cfd1f4a0a84e")
-                .unwrap()
-                .try_into()
-                .unwrap();
+                .unwrap().try_into().unwrap();
 
         assert!(verify_ratls(
             cert,
