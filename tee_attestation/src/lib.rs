@@ -1,6 +1,7 @@
 use error::Error;
 use sev_quote::quote::SEVQuote;
 use sgx_quote::quote::Quote as SGXQuote;
+use sha2::{Digest, Sha256};
 use tdx_quote::policy::TdxQuoteVerificationPolicy;
 use tdx_quote::quote::Quote as TDXQuote;
 
@@ -73,7 +74,19 @@ pub fn parse_quote(raw_quote: &[u8]) -> Result<TeeQuote, Error> {
     Err(Error::UnsupportedTeeError)
 }
 
-// Generate a quote for the current tee
+/// Forge a report data by using a 32-bytes nonce and a sha256(data)
+pub fn forge_report_data_with_nonce(nonce: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, Error> {
+    // user_report_data = ( sha256(data) || 32bytes_nonce )
+    let mut user_report_data = nonce.to_vec();
+
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    user_report_data.extend(hasher.finalize());
+
+    Ok(user_report_data)
+}
+
+/// Generate a quote for the current tee
 #[cfg(target_os = "linux")]
 pub fn get_quote(report_data: &[u8]) -> Result<Vec<u8>, Error> {
     match guess_tee()? {

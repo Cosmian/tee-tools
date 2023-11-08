@@ -2410,6 +2410,7 @@ dependencies = [
  "env_logger",
  "sev_quote",
  "sgx_quote",
+ "sha2 0.10.8",
  "tdx_quote",
  "thiserror",
 ]

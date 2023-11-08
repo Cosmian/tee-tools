@@ -11,6 +11,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 bincode = { workspace = true }
+sha2 = "0.10"
 sev_quote = { path = "../sev_quote" }
 sgx_quote = { path = "../sgx_quote" }
 tdx_quote = { path = "../tdx_quote" }
