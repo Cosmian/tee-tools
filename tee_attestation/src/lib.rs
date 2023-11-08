@@ -1,6 +1,6 @@
 use error::Error;
 use sev_quote::quote::SEVQuote;
-use sgx_quote::quote::Quote as SGXQuote;
+use sgx_quote::{mrsigner::compute_mr_signer, quote::Quote as SGXQuote};
 use sha2::{Digest, Sha256};
 use tdx_quote::policy::TdxQuoteVerificationPolicy;
 use tdx_quote::quote::Quote as TDXQuote;
@@ -21,10 +21,24 @@ pub enum TeeQuote {
 
 #[derive(Debug)]
 pub struct SgxMeasurement {
-    pub public_signer_key_pem: String,
+    pub mr_signer: [u8; 32],
     pub mr_enclave: [u8; 32],
 }
 
+impl TryFrom<(&[u8; 32], &str)> for SgxMeasurement {
+    type Error = Error;
+    fn try_from(attr: (&[u8; 32], &str)) -> Result<Self, Error> {
+        Ok(SgxMeasurement {
+            mr_enclave: *attr.0,
+            mr_signer: compute_mr_signer(attr.1.clone())?
+                .as_slice()
+                .try_into()
+                .map_err(|e| {
+                    Error::InvalidFormat(format!("MRSIGNER does not have the expected size: {e}"))
+                })?,
+        })
+    }
+}
 #[derive(Debug)]
 pub struct SevMeasurement(pub [u8; 48]);
 
@@ -55,6 +69,24 @@ pub fn guess_tee() -> Result<TeeType, Error> {
 /// Tell whether the current platform is a tee
 pub fn is_running_inside_tee() -> bool {
     guess_tee().is_ok()
+}
+
+/// Return the expected measurement read from the quote
+pub fn get_measurement(raw_quote: &[u8]) -> Result<TeeMeasurement, Error> {
+    let quote = parse_quote(raw_quote)?;
+    match quote {
+        TeeQuote::Sev(quote) => Ok(TeeMeasurement {
+            sev: Some(SevMeasurement(quote.report.measurement)),
+            sgx: None,
+        }),
+        TeeQuote::Sgx(quote) => Ok(TeeMeasurement {
+            sev: None,
+            sgx: Some(SgxMeasurement {
+                mr_signer: quote.report_body.mr_signer,
+                mr_enclave: quote.report_body.mr_enclave,
+            }),
+        }),
+    }
 }
 
 /// Parse a quote
@@ -137,8 +169,8 @@ pub fn verify_quote(
                 ));
             }
 
-            let (mr_enclave, public_signer_key_pem) = if let Some(SgxMeasurement {
-                public_signer_key_pem: s,
+            let (mr_enclave, mr_signer) = if let Some(SgxMeasurement {
+                mr_signer: s,
                 mr_enclave: e,
             }) = measurement.sgx
             {
@@ -149,9 +181,7 @@ pub fn verify_quote(
 
             // Verify the quote itself
             Ok(sgx_quote::quote::verify_quote(
-                raw_quote,
-                mr_enclave,
-                public_signer_key_pem.as_deref(),
+                raw_quote, mr_enclave, mr_signer,
             )?)
         }
         TeeQuote::Tdx(_) => {

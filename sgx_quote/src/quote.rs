@@ -1,5 +1,4 @@
 use crate::error::Error;
-use crate::mrsigner::compute_mr_signer;
 use crate::verify::{verify_collaterals, verify_quote_signature};
 
 use core::fmt;
@@ -234,7 +233,7 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>, Error> {
 pub fn verify_quote(
     raw_quote: &[u8],
     mr_enclave: Option<[u8; MRENCLAVE_SIZE]>,
-    public_signer_key_pem: Option<&str>,
+    mr_signer: Option<[u8; MRSIGNER_SIZE]>,
 ) -> Result<(), Error> {
     let (quote, signature, auth_data, certs) = parse_quote(raw_quote)?;
 
@@ -251,14 +250,7 @@ pub fn verify_quote(
 
     // Check the MRSIGNER
     debug!("Checking MRSIGNER");
-    if let Some(public_signer_key_pem) = &public_signer_key_pem {
-        let mr_signer: [u8; MRSIGNER_SIZE] = compute_mr_signer(public_signer_key_pem)?
-            .as_slice()
-            .try_into()
-            .map_err(|e| {
-                Error::InvalidFormat(format!("MRSIGNER does not have the expected size: {e}"))
-            })?;
-
+    if let Some(mr_signer) = mr_signer {
         if quote.report_body.mr_signer != mr_signer {
             return Err(Error::VerificationFailure(format!(
                 "MRSIGNER miss-matches expected value ({})",
@@ -377,6 +369,8 @@ pub fn parse_quote(
 
 #[cfg(test)]
 mod tests {
+    use crate::mrsigner::compute_mr_signer;
+
     use super::*;
     use env_logger::Target;
 
@@ -405,8 +399,11 @@ mod tests {
                 .unwrap()
                 .try_into()
                 .unwrap();
-        let public_signer_key: &str = include_str!("../data/signer-key.pem");
+        let mr_signer = compute_mr_signer(include_str!("../data/signer-key.pem"))
+            .unwrap()
+            .try_into()
+            .unwrap();
 
-        assert!(verify_quote(raw_quote, Some(mrenclave), Some(public_signer_key)).is_ok());
+        assert!(verify_quote(raw_quote, Some(mrenclave), Some(mr_signer)).is_ok());
     }
 }

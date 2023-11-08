@@ -201,19 +201,15 @@ mod tests {
 
         let mrenclave =
             hex::decode(b"958e39c89abec8cfb5ce01961a50860c770c75b01e64ed77847097f9705ed7bd")
-                .unwrap()
-                .try_into()
                 .unwrap();
+        let mrenclave = mrenclave.as_slice().try_into().unwrap();
         let public_signer_key = include_str!("../data/signer-key.pem");
 
         assert!(verify_ratls(
             cert,
             TeeMeasurement {
                 sev: None,
-                sgx: Some(SgxMeasurement {
-                    public_signer_key_pem: public_signer_key.to_string(),
-                    mr_enclave: mrenclave
-                }),
+                sgx: Some(SgxMeasurement::try_from((mrenclave, public_signer_key)).unwrap()),
                 tdx: None
             }
         )

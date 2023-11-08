@@ -2,8 +2,8 @@ use anyhow::Result;
 use clap::Args;
 use hex::decode;
 use ratls::verify::verify_ratls;
-use std::fs;
 use std::path::PathBuf;
+use std::{fs, ops::Deref};
 use tee_attestation::{SevMeasurement, SgxMeasurement, TeeMeasurement};
 
 /// Verify a RATLS certificate
@@ -35,7 +35,7 @@ impl VerifyArgs {
             None
         };
 
-        let mrenclave = if let Some(v) = &self.mrenclave {
+        let mrenclave: Option<[u8; 32]> = if let Some(v) = &self.mrenclave {
             Some(decode(v)?.as_slice().try_into()?)
         } else {
             None
@@ -54,9 +54,7 @@ impl VerifyArgs {
                 tdx: None
             },
             (Some(s), Some(e), None) => TeeMeasurement {
-                sgx: Some(SgxMeasurement {
-                    public_signer_key_pem: s.to_string(), mr_enclave: e
-                }),
+                sgx: Some(SgxMeasurement::try_from((&e, s.deref()))?) ,
                 sev: None,
                 tdx: None
             },
