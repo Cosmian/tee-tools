@@ -9,6 +9,7 @@ members = [
     "sev_quote",
     "sgx_quote",
     "sgx_pck_extension",
+    "tdx_quote",
     "tee_attestation",
 ]
 

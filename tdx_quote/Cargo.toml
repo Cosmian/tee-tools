@@ -1,0 +1,38 @@
+[package]
+name = "tdx_quote"
+version = "0.0.1"
+edition = "2021"
+license = "MIT/Apache-2.0"
+description = "Intel TDX quote parsing and verification"
+
+[lib]
+name = "tdx_quote"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "tdx_quote_tool"
+path = "src/main.rs"
+
+
+[dependencies]
+chrono = "0.4"
+elliptic-curve = { workspace = true }
+hex = { workspace = true }
+hkdf = { workspace = true }
+log = { workspace = true }
+nix = { version = "0.27", features = ["ioctl"] }
+p256 = { workspace = true }
+reqwest = { workspace = true }
+rsa = { workspace = true }
+scroll = { version = "0.11", features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sgx_pck_extension = { path = "../sgx_pck_extension" }
+sgx_quote = { path = "../sgx_quote" }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+urlencoding = "2.1"
+x509-parser = { workspace = true, features = ["verify"] }
+
+[dev-dependencies]
+env_logger = "0.10"
