@@ -1,8 +1,9 @@
-use crate::error::Error;
+use crate::{error::Error, verify::verify_quote_signature};
 
 use core::fmt;
 
 use crate::REPORT_DATA_SIZE;
+use log::debug;
 use scroll::Pread;
 use sgx_quote::quote::ReportBody;
 
@@ -331,6 +332,59 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>, Error> {
     inner_user_report_data[0..user_report_data.len()].copy_from_slice(user_report_data);
 
     _get_quote(&inner_user_report_data)
+}
+
+/// Verify the quote
+///
+/// The verification includes:
+/// - The MRenclave
+/// - The MRsigner
+/// - The quote collaterals
+pub fn verify_quote(raw_quote: &[u8]) -> Result<(), Error> {
+    let (quote, signature) = parse_quote(raw_quote)?;
+
+    // // Check the MRENCLAVE
+    // debug!("Checking MRENCLAVE");
+    // if let Some(mr_enclave) = mr_enclave {
+    //     if quote.report_body.mr_enclave != mr_enclave {
+    //         return Err(Error::VerificationFailure(format!(
+    //             "MRENCLAVE miss-matches expected value ({})",
+    //             hex::encode(quote.report_body.mr_enclave),
+    //         )));
+    //     }
+    // }
+
+    // // Check the MRSIGNER
+    // debug!("Checking MRSIGNER");
+    // if let Some(public_signer_key_pem) = &public_signer_key_pem {
+    //     let mr_signer: [u8; MRSIGNER_SIZE] = compute_mr_signer(public_signer_key_pem)?
+    //         .as_slice()
+    //         .try_into()
+    //         .map_err(|e| {
+    //             Error::InvalidFormat(format!("MRSIGNER does not have the expected size: {e}"))
+    //         })?;
+
+    //     if quote.report_body.mr_signer != mr_signer {
+    //         return Err(Error::VerificationFailure(format!(
+    //             "MRSIGNER miss-matches expected value ({})",
+    //             hex::encode(quote.report_body.mr_signer),
+    //         )));
+    //     }
+    // }
+
+    // // Verify pck chain and tcb
+    // verify_pck_chain_and_tcb(
+    //     raw_quote,
+    //     &certs.certification_data,
+    //     &signature.qe_report_signature,
+    //     PCCS_URL,
+    // )?;
+
+    debug!("Verifying quote signature");
+    verify_quote_signature(raw_quote, &signature)?;
+
+    debug!("Verification succeed");
+    Ok(())
 }
 
 #[cfg(test)]
