@@ -1,12 +1,14 @@
 use crate::error::Error;
 use crate::mrsigner::compute_mr_signer;
-use crate::verify::{verify_pck_chain_and_tcb, verify_quote_signature};
+use crate::verify::{verify_collaterals, verify_quote_signature};
 
 use core::fmt;
 use log::debug;
 
+use pccs_client::IntelTeeType;
 use scroll::Pread;
 
+use crate::{REPORT_DATA_SIZE, SGX_GUEST_PATH};
 use std::{fs, io::Read};
 
 pub const QUOTE_HEADER_SIZE: usize = 48;
@@ -20,7 +22,6 @@ pub const QUOTE_QE_REPORT_SIZE: usize = 384;
 pub const MRENCLAVE_SIZE: usize = 32;
 pub const MRSIGNER_SIZE: usize = 32;
 
-const REPORT_DATA_SIZE: usize = 64;
 const QUOTE_MAX_SIZE: usize = 8192;
 
 const PCCS_URL: &str = "https://pccs.staging.mse.cosmian.com";
@@ -217,7 +218,7 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>, Error> {
     fs::write("/dev/attestation/user_report_data", user_report_data)?;
 
     debug!("Reading quote...");
-    let mut file = fs::File::open("/dev/attestation/quote")?;
+    let mut file = fs::File::open(SGX_GUEST_PATH)?;
     let mut buf = [0; QUOTE_MAX_SIZE];
     let size = file.read(&mut buf[..])?;
 
@@ -267,15 +268,26 @@ pub fn verify_quote(
     }
 
     // Verify pck chain and tcb
-    verify_pck_chain_and_tcb(
-        raw_quote,
+    verify_collaterals(
         &certs.certification_data,
+        &signature.qe_report,
+        raw_quote
+            .get(QUOTE_QE_REPORT_OFFSET..QUOTE_QE_REPORT_SIZE + QUOTE_QE_REPORT_OFFSET)
+            .ok_or_else(|| {
+                Error::InvalidFormat(
+                    "Bad offset extraction to check QE report signature".to_owned(),
+                )
+            })?,
         &signature.qe_report_signature,
+        &signature.qe_report.report_data,
+        &signature.attest_pub_key,
+        &auth_data.auth_data,
         PCCS_URL,
+        &IntelTeeType::Sgx,
     )?;
 
-    debug!("Verifying quote signature");
-    verify_quote_signature(raw_quote, &auth_data, &signature)?;
+    // Verify the quote signature
+    verify_quote_signature(raw_quote, &signature)?;
 
     debug!("Verification succeed");
     Ok(())

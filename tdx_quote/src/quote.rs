@@ -1,17 +1,24 @@
-use crate::{error::Error, verify::verify_quote_signature};
+use crate::{
+    error::Error,
+    policy::TdxQuoteVerificationPolicy,
+    verify::{verify_quote_body_policy, verify_quote_header_policy, verify_quote_signature},
+};
 
 use core::fmt;
 
 use crate::REPORT_DATA_SIZE;
 use log::debug;
+use pccs_client::IntelTeeType;
 use scroll::Pread;
-use sgx_quote::quote::ReportBody;
+use sgx_quote::{
+    quote::{ReportBody, QUOTE_QE_REPORT_SIZE},
+    verify::verify_collaterals,
+};
 
 pub const QUOTE_HEADER_SIZE: usize = 48;
 pub const QUOTE_REPORT_BODY_SIZE: usize = 584;
 
-pub const MRENCLAVE_SIZE: usize = 32;
-pub const MRSIGNER_SIZE: usize = 32;
+const PCCS_URL: &str = "https://api.trustedservices.intel.com";
 
 /// Header of Quote data structure (48 bytes)
 #[repr(C)]
@@ -66,15 +73,29 @@ pub struct TdxReportBody {
     pub mr_seam: [u8; 48],
     pub mr_signer_seam: [u8; 48],
     pub seam_attributes: [u8; 8],
+    /// TD's ATTRIBUTES
     pub td_attributes: [u8; 8],
+    /// TD's XFAM
     pub xfam: u64,
+    /// Measurement of the initial contents of the TD
     pub mr_td: [u8; 48],
+    /// Software-defined ID for non-owner-defined
+    /// configuration of the guest TD – e.g., run-time or OS
+    /// configuration
     pub mr_config_id: [u8; 48],
+    /// Software-defined ID for the guest TD's owner
     pub mr_owner: [u8; 48],
+    /// Software-defined ID for owner-defined configuration of
+    /// the guest TD - e.g., specific to the workload rather than
+    /// the run-time or OS
     pub mr_owner_config: [u8; 48],
+    /// Run-time extendable measurement registers #1
     pub rtmr0: [u8; 48],
+    /// Run-time extendable measurement registers #2
     pub rtmr1: [u8; 48],
+    /// Run-time extendable measurement registers #3
     pub rtmr2: [u8; 48],
+    /// Run-time extendable measurement registers #4
     pub rtmr3: [u8; 48],
     pub report_data: [u8; 64],
 }
@@ -198,6 +219,7 @@ impl fmt::Display for CertificationData {
 #[repr(C)]
 #[derive(Debug)]
 pub struct QEReportCertificationData {
+    pub raw_qe_report: [u8; QUOTE_QE_REPORT_SIZE], //TODO: remove that field and add serialize on ReportBody
     pub qe_report: ReportBody,
     pub qe_report_signature: [u8; 64],
     pub qe_auth_data: QEAuthData,
@@ -228,6 +250,7 @@ pub struct PCKCertificateChainData {
     pub pck_certification_data: Vec<u8>,
 }
 
+/// Parse a quote from a binary blob
 pub fn parse_quote(raw_quote: &[u8]) -> Result<(Quote, EcdsaSigData), Error> {
     let offset = &mut 0usize;
 
@@ -256,6 +279,10 @@ pub fn parse_quote(raw_quote: &[u8]) -> Result<(Quote, EcdsaSigData), Error> {
     let certificate_data_size = raw_quote
         .gread_with::<u32>(offset, scroll::LE)
         .map_err(|e| Error::InvalidFormat(format!("Parse certificate_data_size failed: {e:?}")))?;
+
+    let raw_qe_report = raw_quote[*offset..(*offset + QUOTE_QE_REPORT_SIZE)]
+        .try_into()
+        .map_err(|e| Error::InvalidFormat(format!("Getting qe_report failed: {e:?}")))?;
 
     let qe_report = raw_quote
         .gread_with::<ReportBody>(offset, scroll::LE)
@@ -289,6 +316,7 @@ pub fn parse_quote(raw_quote: &[u8]) -> Result<(Quote, EcdsaSigData), Error> {
             certificate_data_type,
             certificate_data_size,
             qe_report_certification_data: QEReportCertificationData {
+                raw_qe_report,
                 qe_report,
                 qe_report_signature,
                 qe_auth_data: QEAuthData {
@@ -319,6 +347,7 @@ pub fn parse_quote(raw_quote: &[u8]) -> Result<(Quote, EcdsaSigData), Error> {
 }
 
 #[cfg(target_os = "linux")]
+/// Get the quote from the block device
 pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>, Error> {
     use crate::generate::_get_quote;
 
@@ -335,52 +364,46 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>, Error> {
 }
 
 /// Verify the quote
-///
-/// The verification includes:
-/// - The MRenclave
-/// - The MRsigner
-/// - The quote collaterals
-pub fn verify_quote(raw_quote: &[u8]) -> Result<(), Error> {
+pub fn verify_quote(raw_quote: &[u8], policy: &TdxQuoteVerificationPolicy) -> Result<(), Error> {
     let (quote, signature) = parse_quote(raw_quote)?;
 
-    // // Check the MRENCLAVE
-    // debug!("Checking MRENCLAVE");
-    // if let Some(mr_enclave) = mr_enclave {
-    //     if quote.report_body.mr_enclave != mr_enclave {
-    //         return Err(Error::VerificationFailure(format!(
-    //             "MRENCLAVE miss-matches expected value ({})",
-    //             hex::encode(quote.report_body.mr_enclave),
-    //         )));
-    //     }
-    // }
+    verify_quote_header_policy(&quote.header, &policy.header)?;
 
-    // // Check the MRSIGNER
-    // debug!("Checking MRSIGNER");
-    // if let Some(public_signer_key_pem) = &public_signer_key_pem {
-    //     let mr_signer: [u8; MRSIGNER_SIZE] = compute_mr_signer(public_signer_key_pem)?
-    //         .as_slice()
-    //         .try_into()
-    //         .map_err(|e| {
-    //             Error::InvalidFormat(format!("MRSIGNER does not have the expected size: {e}"))
-    //         })?;
+    verify_quote_body_policy(&quote.report_body, &policy.body)?;
 
-    //     if quote.report_body.mr_signer != mr_signer {
-    //         return Err(Error::VerificationFailure(format!(
-    //             "MRSIGNER miss-matches expected value ({})",
-    //             hex::encode(quote.report_body.mr_signer),
-    //         )));
-    //     }
-    // }
+    verify_collaterals(
+        &signature
+            .certification_data
+            .qe_report_certification_data
+            .pck_certificate_chain_data
+            .pck_certification_data,
+        &signature
+            .certification_data
+            .qe_report_certification_data
+            .qe_report,
+        &signature
+            .certification_data
+            .qe_report_certification_data
+            .raw_qe_report,
+        &signature
+            .certification_data
+            .qe_report_certification_data
+            .qe_report_signature,
+        &signature
+            .certification_data
+            .qe_report_certification_data
+            .qe_report
+            .report_data,
+        &signature.attest_pub_key,
+        &signature
+            .certification_data
+            .qe_report_certification_data
+            .qe_auth_data
+            .qe_auth_data,
+        PCCS_URL,
+        &IntelTeeType::Tdx,
+    )?;
 
-    // // Verify pck chain and tcb
-    // verify_pck_chain_and_tcb(
-    //     raw_quote,
-    //     &certs.certification_data,
-    //     &signature.qe_report_signature,
-    //     PCCS_URL,
-    // )?;
-
-    debug!("Verifying quote signature");
     verify_quote_signature(raw_quote, &signature)?;
 
     debug!("Verification succeed");
@@ -389,6 +412,11 @@ pub fn verify_quote(raw_quote: &[u8]) -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        is_tdx,
+        policy::{TdxQuoteBodyVerificationPolicy, TdxQuoteHeaderVerificationPolicy},
+    };
+
     use super::*;
     use env_logger::Target;
 
@@ -400,7 +428,62 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_quote() {
+    fn test_tdx_get_quote() {
+        if is_tdx() {
+            assert!(get_quote(b"0123456789abcdef012345678789abcdef0123456789abcdef").is_ok());
+        }
+    }
+
+    #[test]
+    fn test_tdx_verify_quote() {
+        let raw_quote = include_bytes!("../data/quote.dat");
+        assert!(verify_quote(
+            raw_quote,
+            &TdxQuoteVerificationPolicy {
+                header: TdxQuoteHeaderVerificationPolicy {
+                    minimum_qe_svn: Some(0),
+                    minimum_pce_svn: Some(0),
+                    qe_vendor_id: Some([
+                        147, 154, 114, 51, 247, 156, 76, 169, 148, 10, 13, 179, 149, 127, 6, 7
+                    ]),
+                },
+                body: TdxQuoteBodyVerificationPolicy {
+                    minimum_tee_tcb_svn: Some([3, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+                    mr_seam: Some([
+                        47, 210, 121, 193, 97, 100, 169, 61, 213, 191, 55, 61, 131, 67, 40, 212,
+                        96, 8, 194, 182, 147, 175, 158, 187, 134, 91, 8, 178, 206, 211, 32, 201,
+                        168, 155, 72, 105, 169, 250, 182, 15, 190, 157, 12, 90, 83, 99, 198, 86
+                    ]),
+                    td_attributes: Some(
+                        hex::decode("0000001000000000").unwrap().try_into().unwrap()
+                    ),
+                    xfam: Some(231),
+                    mr_td: Some(
+                        hex::decode("5f53c3881242a5b418854923bb4adec34c72aa4b570d526179d63f9ee6e4cefb6abd4f0f35e5e6e29655a60d90bcf27f").unwrap().try_into().unwrap()
+                    ),
+                    mr_config_id: Some(
+                        hex::decode("000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap().try_into().unwrap()
+                    ),
+                    mr_owner: Some(
+                        hex::decode("000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap().try_into().unwrap()
+                    ),
+                    mr_owner_config: Some(
+                        hex::decode("000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap().try_into().unwrap()
+                    ),
+                    report_data: Some([
+                        48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102, 48, 49,
+                        50, 51, 52, 53, 54, 55, 56, 55, 56, 57, 97, 98, 99, 100, 101, 102, 48, 49,
+                        50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102, 0, 0, 0, 0, 0,
+                        0, 0, 0, 0, 0, 0, 0, 0, 0
+                    ]),
+                }
+            }
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn test_tdx_parse_quote() {
         init();
         let raw_quote = include_bytes!("../data/quote.dat");
         let (quote, ecdsa_sig_data) = parse_quote(raw_quote).unwrap();

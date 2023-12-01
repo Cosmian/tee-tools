@@ -1,10 +1,9 @@
-use crate::error::Error;
+use crate::{error::Error, TDX_GUEST_PATH};
 
 use crate::REPORT_DATA_SIZE;
 use nix::ioctl_readwrite;
 use std::{fs, os::fd::AsRawFd, ptr};
 
-const TDX_GUEST_PATH: &str = "/dev/tdx_guest";
 const TDX_REPORT_LEN: usize = 1024;
 const TDX_QUOTE_LEN: usize = 4 * 4096;
 
