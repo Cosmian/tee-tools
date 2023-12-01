@@ -85,8 +85,7 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<SEVQuote, Error> {
     };
 
     // Request a standard attestation report.
-    let report = fw.get_report(
-        // get_ext_report
+    let (report, certs) = fw.get_ext_report(
         None,
         Some(
             user_report_data
@@ -98,7 +97,7 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<SEVQuote, Error> {
 
     Ok(SEVQuote {
         report,
-        certs: vec![],
+        certs: certs.unwrap_or(vec![]),
     })
 }
 
