@@ -318,10 +318,13 @@ pub fn parse_quote(
         .map_err(|e| Error::InvalidFormat(format!("Parse QE auth data length failed: {e:?}")))?;
     let mut qe_auth_data: Vec<u8> = vec![0; qe_auth_data_len as usize];
     raw_quote.gread_inout(offset, &mut qe_auth_data)?;
-    assert!(
-        qe_auth_data.len() == qe_auth_data_len as usize,
-        "unexpected qe_auth_data_len"
-    );
+
+    if qe_auth_data.len() != qe_auth_data_len as usize {
+        return Err(Error::InvalidFormat(
+            "Unexpected qe_auth_data_len".to_owned(),
+        ));
+    }
+
     let qe_auth_data = AuthData {
         auth_data: qe_auth_data,
     };
@@ -331,6 +334,7 @@ pub fn parse_quote(
         .map_err(|e| {
             Error::InvalidFormat(format!("Parse certification data type failed: {e:?}"))
         })?;
+
     debug!("certification_data_type: {}", certification_data_type);
 
     let certification_data_len = raw_quote
@@ -338,22 +342,27 @@ pub fn parse_quote(
         .map_err(|e| {
             Error::InvalidFormat(format!("Parse certification data length failed: {e:?}"))
         })?;
+
     let mut certification_data: Vec<u8> = vec![0; certification_data_len as usize];
     raw_quote.gread_inout(offset, &mut certification_data)?;
-    assert!(
-        certification_data.len() == certification_data_len as usize,
-        "unexpected certification_data_len"
-    );
+    if certification_data.len() != certification_data_len as usize {
+        return Err(Error::InvalidFormat(
+            "Unexpected certification_data_len".to_owned(),
+        ));
+    }
+
     let certification_data = CertificationData {
         cert_key_type: certification_data_type,
         certification_data,
     };
 
-    assert!(
-        *offset - QUOTE_REPORT_BODY_SIZE - QUOTE_HEADER_SIZE - 4 == signature_data_len as usize,
-        "bad signature length!"
-    );
-    assert!(raw_quote.len() == *offset, "failed to parse quote!");
+    if *offset - QUOTE_REPORT_BODY_SIZE - QUOTE_HEADER_SIZE - 4 != signature_data_len as usize {
+        return Err(Error::InvalidFormat("Bad signature length!".to_owned()));
+    }
+
+    if raw_quote.len() != *offset {
+        return Err(Error::InvalidFormat("Failed to parse quote!".to_owned()));
+    }
 
     Ok((
         Quote {

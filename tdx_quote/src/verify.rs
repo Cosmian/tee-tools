@@ -5,9 +5,9 @@ use crate::quote::{
 };
 
 use log::debug;
+use p256::ecdsa::signature::hazmat::PrehashVerifier;
 use p256::ecdsa::{Signature, VerifyingKey};
 use p256::{AffinePoint, EncodedPoint};
-use p256::ecdsa::signature::hazmat::PrehashVerifier;
 use sha2::{Digest, Sha256};
 
 use p256::elliptic_curve::sec1::FromEncodedPoint;

@@ -2410,6 +2410,7 @@ dependencies = [
  "env_logger",
  "sev_quote",
  "sgx_quote",
+ "tdx_quote",
  "thiserror",
 ]
 

@@ -50,17 +50,20 @@ impl VerifyArgs {
         let measurement = match (public_signer_key, mrenclave, sev_measurement) {
             (None, None, None) => TeeMeasurement {
                 sgx: None,
-                sev: None
+                sev: None,
+                tdx: None
             },
             (Some(s), Some(e), None) => TeeMeasurement {
                 sgx: Some(SgxMeasurement {
                     public_signer_key_pem: s.to_string(), mr_enclave: e
                 }),
-                sev: None
+                sev: None,
+                tdx: None
             },
             (None, None, Some(m)) => TeeMeasurement {
                 sgx: None,
-                sev: Some(SevMeasurement(m))
+                sev: Some(SevMeasurement(m)),
+                tdx: None,
             },
             _ => anyhow::bail!("Bad measurements combination. It should be [None | (--mrenclave & --signer_key) | measurement]")
         };

@@ -20,7 +20,9 @@ use x509_cert::ext::pkix::BasicConstraints;
 use crate::verify::forge_report_data;
 use crate::{
     error::Error,
-    extension::{AMDRatlsSExtension, IntelRatlsExtension, RatlsExtension},
+    extension::{
+        AMDSevRatlsExtension, IntelSgxRatlsExtension, IntelTdxRatlsExtension, RatlsExtension,
+    },
 };
 use x509_cert::{
     builder::{Builder, CertificateBuilder, Profile},
@@ -69,10 +71,13 @@ pub fn get_ratls_extension(
 
     match guess_tee()? {
         /* TODO: remove that after sgx::get_quote refactor */
-        TeeType::Sev => Ok(RatlsExtension::AMDTee(AMDRatlsSExtension::from(
+        TeeType::Sev => Ok(RatlsExtension::AMDSevTee(AMDSevRatlsExtension::from(
             OctetString::new(quote).map_err(|_| Error::UnsupportedTeeError)?,
         ))),
-        TeeType::Sgx => Ok(RatlsExtension::IntelTee(IntelRatlsExtension::from(
+        TeeType::Sgx => Ok(RatlsExtension::IntelSgxTee(IntelSgxRatlsExtension::from(
+            OctetString::new(quote).map_err(|_| Error::UnsupportedTeeError)?,
+        ))),
+        TeeType::Tdx => Ok(RatlsExtension::IntelTdxTee(IntelTdxRatlsExtension::from(
             OctetString::new(quote).map_err(|_| Error::UnsupportedTeeError)?,
         ))),
     }
@@ -124,10 +129,13 @@ pub fn generate_ratls_cert(
     .map_err(|_| Error::RatlsError("failed to create certificate builder".to_owned()))?;
 
     match get_ratls_extension(signer.verifying_key(), quote_extra_data)? {
-        RatlsExtension::AMDTee(amd_ext) => builder
+        RatlsExtension::AMDSevTee(amd_ext) => builder
             .add_extension(&amd_ext)
             .map_err(|_| Error::RatlsError("can't create RA-TLS AMD extension".to_owned()))?,
-        RatlsExtension::IntelTee(intel_ext) => builder
+        RatlsExtension::IntelSgxTee(intel_ext) => builder
+            .add_extension(&intel_ext)
+            .map_err(|_| Error::RatlsError("can't create RA-TLS Intel extension".to_owned()))?,
+        RatlsExtension::IntelTdxTee(intel_ext) => builder
             .add_extension(&intel_ext)
             .map_err(|_| Error::RatlsError("can't create RA-TLS Intel extension".to_owned()))?,
     };

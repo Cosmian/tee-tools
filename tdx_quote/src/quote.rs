@@ -332,10 +332,9 @@ pub fn parse_quote(raw_quote: &[u8]) -> Result<(Quote, EcdsaSigData), Error> {
         },
     };
 
-    assert!(
-        *offset - QUOTE_REPORT_BODY_SIZE - QUOTE_HEADER_SIZE - 4 == signature_data_len as usize,
-        "bad signature length!"
-    );
+    if *offset - QUOTE_REPORT_BODY_SIZE - QUOTE_HEADER_SIZE - 4 != signature_data_len as usize {
+        return Err(Error::InvalidFormat("Bad signature length!".to_owned()));
+    }
 
     Ok((
         Quote {

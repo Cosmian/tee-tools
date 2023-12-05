@@ -1,17 +1,21 @@
 use error::Error;
 use sev_quote::quote::SEVQuote;
 use sgx_quote::quote::Quote as SGXQuote;
+use tdx_quote::policy::TdxQuoteVerificationPolicy;
+use tdx_quote::quote::Quote as TDXQuote;
 
 pub mod error;
 
 pub enum TeeType {
     Sgx,
     Sev,
+    Tdx,
 }
 
 pub enum TeeQuote {
     Sev(Box<SEVQuote>),
     Sgx(Box<SGXQuote>),
+    Tdx(Box<TDXQuote>),
 }
 
 #[derive(Debug)]
@@ -27,12 +31,17 @@ pub struct SevMeasurement(pub [u8; 48]);
 pub struct TeeMeasurement {
     pub sgx: Option<SgxMeasurement>,
     pub sev: Option<SevMeasurement>,
+    pub tdx: Option<TdxQuoteVerificationPolicy>,
 }
 
 /// Tell whether the platform is an SGX or an SEV processor
 pub fn guess_tee() -> Result<TeeType, Error> {
     if sev_quote::is_sev() {
         return Ok(TeeType::Sev);
+    }
+
+    if tdx_quote::is_tdx() {
+        return Ok(TeeType::Tdx);
     }
 
     if sgx_quote::is_sgx() {
@@ -57,6 +66,10 @@ pub fn parse_quote(raw_quote: &[u8]) -> Result<TeeQuote, Error> {
         return Ok(TeeQuote::Sgx(Box::new(quote)));
     }
 
+    if let Ok((quote, _)) = tdx_quote::quote::parse_quote(raw_quote) {
+        return Ok(TeeQuote::Tdx(Box::new(quote)));
+    }
+
     Err(Error::UnsupportedTeeError)
 }
 
@@ -70,6 +83,7 @@ pub fn get_quote(report_data: &[u8]) -> Result<Vec<u8>, Error> {
                 .map_err(|_| Error::InvalidFormat("Can't serialize the SEV quote".to_owned()))
         }
         TeeType::Sgx => Ok(sgx_quote::quote::get_quote(report_data)?),
+        TeeType::Tdx => Ok(tdx_quote::quote::get_quote(report_data)?),
     }
 }
 
@@ -127,6 +141,15 @@ pub fn verify_quote(
                 public_signer_key_pem.as_deref(),
             )?)
         }
+        TeeQuote::Tdx(_) => {
+            // Verify the quote itself
+            Ok(tdx_quote::quote::verify_quote(
+                raw_quote,
+                &measurement
+                    .tdx
+                    .map_or_else(TdxQuoteVerificationPolicy::default, |m| m),
+            )?)
+        }
     }
 }
 
@@ -136,5 +159,6 @@ pub fn get_key(salt: Option<&[u8]>) -> Result<Vec<u8>, Error> {
     match guess_tee()? {
         TeeType::Sgx => Ok(sgx_quote::key::get_key(salt)?),
         TeeType::Sev => Ok(sev_quote::key::get_key(salt)?),
+        TeeType::Tdx => Err(Error::UnsupportedTeeError),
     }
 }

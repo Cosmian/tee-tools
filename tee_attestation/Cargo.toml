@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 bincode = { workspace = true }
 sev_quote = { path = "../sev_quote" }
 sgx_quote = { path = "../sgx_quote" }
+tdx_quote = { path = "../tdx_quote" }
 thiserror = { workspace = true }
 
 [dev-dependencies]

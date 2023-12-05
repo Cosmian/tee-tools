@@ -13,7 +13,9 @@ use tee_attestation::{verify_quote, TeeMeasurement};
 
 use crate::{
     error::Error,
-    extension::{AMD_RATLS_EXTENSION_OID, INTEL_RATLS_EXTENSION_OID},
+    extension::{
+        AMD_SEV_RATLS_EXTENSION_OID, INTEL_SGX_RATLS_EXTENSION_OID, INTEL_TDX_RATLS_EXTENSION_OID,
+    },
 };
 use x509_parser::{
     oid_registry::Oid,
@@ -77,16 +79,25 @@ pub fn verify_ratls(pem_ratls_cert: &[u8], measurement: TeeMeasurement) -> Resul
 
 /// Extract the quote from an RATLS certificate
 fn extract_quote(ratls_cert: &X509Certificate) -> Result<Vec<u8>, Error> {
-    let intel_ext_oid = Oid::from_str(INTEL_RATLS_EXTENSION_OID).map_err(|_| Error::Asn1Error)?;
-    let amd_ext_oid = Oid::from_str(AMD_RATLS_EXTENSION_OID).map_err(|_| Error::Asn1Error)?;
+    let intel_sgx_ext_oid =
+        Oid::from_str(INTEL_SGX_RATLS_EXTENSION_OID).map_err(|_| Error::Asn1Error)?;
+    let intel_tdx_ext_oid =
+        Oid::from_str(INTEL_TDX_RATLS_EXTENSION_OID).map_err(|_| Error::Asn1Error)?;
+    let amd_sev_ext_oid =
+        Oid::from_str(AMD_SEV_RATLS_EXTENSION_OID).map_err(|_| Error::Asn1Error)?;
 
     // Try to extract SGX quote
-    if let Some(quote) = ratls_cert.get_extension_unique(&intel_ext_oid)? {
+    if let Some(quote) = ratls_cert.get_extension_unique(&intel_sgx_ext_oid)? {
+        return Ok(quote.value.to_vec());
+    }
+
+    // Try to extract SGX quote
+    if let Some(quote) = ratls_cert.get_extension_unique(&intel_tdx_ext_oid)? {
         return Ok(quote.value.to_vec());
     }
 
     // Try to extract SEV quote
-    if let Some(quote) = ratls_cert.get_extension_unique(&amd_ext_oid)? {
+    if let Some(quote) = ratls_cert.get_extension_unique(&amd_sev_ext_oid)? {
         return Ok(quote.value.to_vec());
     }
 
@@ -202,7 +213,8 @@ mod tests {
                 sgx: Some(SgxMeasurement {
                     public_signer_key_pem: public_signer_key.to_string(),
                     mr_enclave: mrenclave
-                })
+                }),
+                tdx: None
             }
         )
         .is_ok());
@@ -222,7 +234,8 @@ mod tests {
             cert,
             TeeMeasurement {
                 sev: Some(SevMeasurement(measurement)),
-                sgx: None
+                sgx: None,
+                tdx: None
             }
         )
         .is_ok());
