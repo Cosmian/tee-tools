@@ -400,7 +400,7 @@ pub fn verify_quote(raw_quote: &[u8], policy: &TdxQuoteVerificationPolicy) -> Re
             .qe_auth_data
             .qe_auth_data,
         PCCS_URL,
-        &IntelTeeType::Tdx,
+        IntelTeeType::Tdx,
     )?;
 
     verify_quote_signature(raw_quote, &signature)?;

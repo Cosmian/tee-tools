@@ -124,7 +124,7 @@ pub fn verify_collaterals(
     signature_attest_pub_key: &[u8],
     auth_data: &[u8],
     pccs_url: &str,
-    tee_type: &IntelTeeType,
+    tee_type: IntelTeeType,
 ) -> Result<(), Error> {
     debug!("Extracting certificate chain...");
     let chain = get_certificate_chain_from_pem(certification_data)?;
@@ -145,7 +145,7 @@ pub fn verify_collaterals(
 
     verify_pck_certs(&pck_cert, &pck_ca_cert, &root_ca_cert)?;
 
-    if tee_type == &IntelTeeType::Sgx {
+    if tee_type == IntelTeeType::Sgx {
         debug!("Verifying root ca crl...");
 
         let root_ca_crl = get_root_ca_crl(pccs_url)?;
@@ -159,15 +159,9 @@ pub fn verify_collaterals(
 
         let mut all_error = true;
         for crl_url in &crl_distribution_points {
-            let ca_crl = get_root_ca_crl_from_uri(crl_url);
-            match ca_crl {
-                Ok(ca_crl) => {
-                    all_error = false;
-                    verify_root_ca_crl(&root_ca_cert, &ca_crl)?;
-                }
-                Err(_) => {
-                    continue;
-                }
+            if let Ok(ca_crl) = get_root_ca_crl_from_uri(crl_url) {
+                all_error = false;
+                verify_root_ca_crl(&root_ca_cert, &ca_crl)?;
             }
         }
 
@@ -372,7 +366,7 @@ fn verify_qe_report(qe_report: &ReportBody, qe_identity: QeIdentity) -> Result<(
 fn verify_tcb_info(
     tcb_info_issuer_chain: &[u8],
     raw_tcb_info: &[u8],
-    tee_type: &IntelTeeType,
+    tee_type: IntelTeeType,
     root_ca_cert: &X509Certificate,
     sgx_pck_extension: &SgxPckExtension,
 ) -> Result<(), Error> {
@@ -470,7 +464,7 @@ fn get_certificate_chain_from_pem(data: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
                     ));
                 }
 
-                chain.push(pem.contents.clone());
+                chain.push(pem.contents);
             }
 
             Err(e) => {

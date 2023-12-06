@@ -283,7 +283,7 @@ pub fn verify_quote(
         &signature.attest_pub_key,
         &auth_data.auth_data,
         PCCS_URL,
-        &IntelTeeType::Sgx,
+        IntelTeeType::Sgx,
     )?;
 
     // Verify the quote signature

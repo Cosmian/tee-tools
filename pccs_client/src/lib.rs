@@ -21,7 +21,7 @@ impl std::fmt::Display for PckCa {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum IntelTeeType {
     Sgx,
     Tdx,
@@ -82,7 +82,7 @@ pub fn get_root_ca_crl_from_uri(uri: &str) -> Result<Vec<u8>, Error> {
 
     let r = reqwest::blocking::get(url)?;
 
-    let body = match r.status() {
+    match r.status() {
         StatusCode::OK => Ok(r.bytes()?[..].to_vec()),
         StatusCode::NOT_FOUND => Err(Error::PccsResponseError(
             "Root CA CRL cannot be found".to_owned(),
@@ -94,9 +94,7 @@ pub fn get_root_ca_crl_from_uri(uri: &str) -> Result<Vec<u8>, Error> {
             "Unable to retrieve the collateral from the Intel PCS API".to_owned(),
         )),
         s => Err(Error::UnexpectedError(format!("HTTP status code {}", s))),
-    }?;
-
-    Ok(body)
+    }
 }
 
 /// Fetch Intel SGX PCK Certificate Revocation List (CRL) and issuer chain
@@ -177,7 +175,7 @@ pub fn get_pck_crl(pccs_url: &str, ca: PckCa) -> Result<(Vec<u8>, Vec<u8>), Erro
 /// [`PCS API documentation`]: https://api.portal.trustedservices.intel.com/documentation#pcs-tcb-info-model-v3
 pub fn get_tcbinfo(
     pccs_url: &str,
-    tee: &IntelTeeType,
+    tee: IntelTeeType,
     fmscp: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>), Error> {
     let url = reqwest::Url::parse_with_params(
@@ -236,7 +234,7 @@ pub fn get_tcbinfo(
 //
 /// [`SGX_DCAP_Caching_Service_Design_Guide.pdf`]: https://download.01.org/intel-sgx/sgx-dcap/1.18/linux/docs/SGX_DCAP_Caching_Service_Design_Guide.pdf
 /// [`PCS API documentation`]: https://api.portal.trustedservices.intel.com/documentation#pcs-enclave-identity-model-v2
-pub fn get_qe_identity(pccs_url: &str, tee: &IntelTeeType) -> Result<(Vec<u8>, Vec<u8>), Error> {
+pub fn get_qe_identity(pccs_url: &str, tee: IntelTeeType) -> Result<(Vec<u8>, Vec<u8>), Error> {
     let url = reqwest::Url::from_str(&format!(
         "{pccs_url}/{}/certification/v4/qe/identity",
         tee.as_str()
@@ -342,7 +340,7 @@ mod tests {
     fn test_tcb_info_sgx() {
         let fmspc = hex::decode("30606a000000").unwrap();
         let (tcb_info_issuer_chain, tcb_info) =
-            get_tcbinfo("https://pccs.mse.cosmian.com", &IntelTeeType::Sgx, &fmspc).unwrap();
+            get_tcbinfo("https://pccs.mse.cosmian.com", IntelTeeType::Sgx, &fmspc).unwrap();
 
         assert!(String::from_utf8(tcb_info).is_ok());
 
@@ -364,7 +362,7 @@ mod tests {
         let fmspc = hex::decode("00806f050000").unwrap();
         let (tcb_info_issuer_chain, tcb_info) = get_tcbinfo(
             "https://api.trustedservices.intel.com",
-            &IntelTeeType::Tdx,
+            IntelTeeType::Tdx,
             &fmspc,
         )
         .unwrap();
@@ -387,7 +385,7 @@ mod tests {
     #[test]
     fn test_qe_identity_sgx() {
         let (qe_identity_issuer_chain, qe_identity) =
-            get_qe_identity("https://pccs.mse.cosmian.com", &IntelTeeType::Sgx).unwrap();
+            get_qe_identity("https://pccs.mse.cosmian.com", IntelTeeType::Sgx).unwrap();
 
         assert!(String::from_utf8(qe_identity).is_ok());
 
@@ -408,7 +406,7 @@ mod tests {
     #[test]
     fn test_qe_identity_tdx() {
         let (qe_identity_issuer_chain, qe_identity) =
-            get_qe_identity("https://api.trustedservices.intel.com", &IntelTeeType::Tdx).unwrap();
+            get_qe_identity("https://api.trustedservices.intel.com", IntelTeeType::Tdx).unwrap();
 
         assert!(String::from_utf8(qe_identity).is_ok());
 

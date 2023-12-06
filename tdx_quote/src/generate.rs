@@ -44,7 +44,7 @@ fn get_td_report(user_report_data: &[u8; REPORT_DATA_SIZE]) -> Result<Vec<u8>, E
         reportdata: [0; REPORT_DATA_SIZE],
         tdreport: [0; TDX_REPORT_LEN],
     };
-    request.reportdata.copy_from_slice(&user_report_data[0..]);
+    request.reportdata.copy_from_slice(&user_report_data[..]);
 
     //build the operator code
     ioctl_readwrite!(

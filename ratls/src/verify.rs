@@ -91,7 +91,7 @@ fn extract_quote(ratls_cert: &X509Certificate) -> Result<Vec<u8>, Error> {
         return Ok(quote.value.to_vec());
     }
 
-    // Try to extract SGX quote
+    // Try to extract TDX quote
     if let Some(quote) = ratls_cert.get_extension_unique(&intel_tdx_ext_oid)? {
         return Ok(quote.value.to_vec());
     }
