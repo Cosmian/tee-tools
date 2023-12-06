@@ -156,7 +156,9 @@ pub fn get_server_certificate(host: &str, port: u32) -> Result<Vec<u8>, Error> {
 mod tests {
     use super::*;
     use base64::{engine::general_purpose, Engine as _};
-    use tee_attestation::{SevQuoteVerificationPolicy, SgxQuoteVerificationPolicy};
+    use tee_attestation::{
+        SevQuoteVerificationPolicy, SgxQuoteVerificationPolicy, TdxQuoteVerificationPolicy,
+    };
 
     #[test]
     fn test_ratls_get_server_certificate() {
@@ -225,6 +227,21 @@ mod tests {
                 sev: Some(SevQuoteVerificationPolicy::new(measurement)),
                 sgx: None,
                 tdx: None
+            }
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn test_ratls_tdx_verify_ratls() {
+        let cert = include_bytes!("../data/tdx-cert.ratls.pem");
+
+        assert!(verify_ratls(
+            cert,
+            &mut TeePolicy {
+                sev: None,
+                sgx: None,
+                tdx: Some(TdxQuoteVerificationPolicy::new()),
             }
         )
         .is_ok());

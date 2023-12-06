@@ -161,6 +161,8 @@ pub fn verify_quote(quote: &Quote, policy: &SevQuoteVerificationPolicy) -> Resul
 
 #[cfg(test)]
 mod tests {
+    use crate::is_sev;
+
     use super::*;
     use env_logger::Target;
 
@@ -169,6 +171,16 @@ mod tests {
         let builder = builder.is_test(true);
         let builder = builder.target(Target::Stdout);
         let _ = builder.try_init();
+    }
+
+    #[test]
+    fn test_sev_get_quote() {
+        if is_sev() {
+            assert!(
+                get_quote(b"0123456789abcdef012345678789abcdef0123456789abcdef00000000000000")
+                    .is_ok()
+            );
+        }
     }
 
     #[test]
