@@ -18,6 +18,7 @@ hkdf = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
+serde-hex = { workspace = true }
 sev = { path = "../../sev/", features = ["snp", "openssl", "sev"] }
 sha2 = { workspace = true }
 thiserror = { workspace = true }

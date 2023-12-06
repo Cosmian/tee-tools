@@ -18,6 +18,7 @@ pccs_client = { path = "../pccs_client" }
 scroll = { version = "0.11", features = ["derive"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde-hex = { workspace = true }
 sgx_quote = { path = "../sgx_quote" }
 sha2 = { workspace = true }
 thiserror = { workspace = true }

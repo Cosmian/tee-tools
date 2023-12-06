@@ -1,9 +1,9 @@
-use crate::error::Error;
+use crate::{error::Error, MRSIGNER_SIZE};
 use rsa::{pkcs8::DecodePublicKey, traits::PublicKeyParts, RsaPublicKey};
 use sha2::{Digest, Sha256};
 
 /// Compute the `MR_SIGNER` from the public enclave certificate (PEM format)
-pub fn compute_mr_signer(pem_public_enclave_cert: &str) -> Result<Vec<u8>, Error> {
+pub fn compute_mr_signer(pem_public_enclave_cert: &str) -> Result<[u8; MRSIGNER_SIZE], Error> {
     let public_key = RsaPublicKey::from_public_key_pem(pem_public_enclave_cert)?;
 
     let modulus = public_key.n();
@@ -12,7 +12,10 @@ pub fn compute_mr_signer(pem_public_enclave_cert: &str) -> Result<Vec<u8>, Error
 
     let mut hash = Sha256::new();
     hash.update(&modulus_bytes);
-    Ok(hash.finalize()[..].to_vec())
+
+    hash.finalize()[..]
+        .try_into()
+        .map_err(|_| Error::CryptoError("MR signer size is invalid!".to_owned()))
 }
 
 #[cfg(test)]
@@ -22,7 +25,7 @@ mod tests {
     use super::compute_mr_signer;
 
     #[test]
-    pub fn test_compute_mr_signer() {
+    pub fn test_sgx_compute_mr_signer() {
         assert_eq!(
             encode(
                 compute_mr_signer(

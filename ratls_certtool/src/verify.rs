@@ -4,7 +4,7 @@ use hex::decode;
 use ratls::verify::verify_ratls;
 use std::path::PathBuf;
 use std::{fs, ops::Deref};
-use tee_attestation::{SevMeasurement, SgxMeasurement, TeeMeasurement};
+use tee_attestation::{SevQuoteVerificationPolicy, SgxQuoteVerificationPolicy, TeePolicy};
 
 /// Verify a RATLS certificate
 #[derive(Args, Debug)]
@@ -47,26 +47,26 @@ impl VerifyArgs {
             None
         };
 
-        let measurement = match (public_signer_key, mrenclave, sev_measurement) {
-            (None, None, None) => TeeMeasurement {
+        let mut policy = match (public_signer_key, mrenclave, sev_measurement) {
+            (None, None, None) => TeePolicy {
                 sgx: None,
                 sev: None,
                 tdx: None
             },
-            (Some(s), Some(e), None) => TeeMeasurement {
-                sgx: Some(SgxMeasurement::try_from((&e, s.deref()))?) ,
+            (Some(s), Some(e), None) => TeePolicy {
+                sgx: Some(SgxQuoteVerificationPolicy::new(e, s.deref())?) ,
                 sev: None,
                 tdx: None
             },
-            (None, None, Some(m)) => TeeMeasurement {
+            (None, None, Some(m)) => TeePolicy {
                 sgx: None,
-                sev: Some(SevMeasurement(m)),
+                sev: Some(SevQuoteVerificationPolicy::new(m)),
                 tdx: None,
             },
             _ => anyhow::bail!("Bad measurements combination. It should be [None | (--mrenclave & --signer_key) | measurement]")
         };
 
-        verify_ratls(fs::read_to_string(&self.cert)?.as_bytes(), measurement)?;
+        verify_ratls(fs::read_to_string(&self.cert)?.as_bytes(), &mut policy)?;
 
         println!("Verification succeed!");
 

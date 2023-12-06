@@ -1,22 +1,16 @@
-use std::collections::HashMap;
-
 use crate::{
     error::Error,
-    snp_extension::{check_cert_ext_byte, check_cert_ext_bytes, SnpOid},
+    policy::SevQuoteVerificationPolicy,
+    verify::{
+        request_amd_vcek_cert_chain, request_amd_vlek_cert_chain, request_vcek,
+        verify_chain_certificates, verify_quote_policy, verify_revocation_list, verify_tcb,
+    },
 };
 
-use asn1_rs::{FromDer, Oid};
-
-use log::debug;
-
-use reqwest::blocking::get;
 use serde::{Deserialize, Serialize};
 use sev::{
     certs::snp::Verifiable,
-    firmware::{
-        guest::*,
-        host::{CertTableEntry, TcbVersion},
-    },
+    firmware::{guest::*, host::CertTableEntry},
 };
 
 use sev::{
@@ -25,13 +19,10 @@ use sev::{
 };
 
 use uuid::Uuid;
-use x509_parser::{
-    self,
-    certificate::X509Certificate,
-    pem::parse_x509_pem,
-    prelude::{Pem, X509Extension},
-    revocation_list::CertificateRevocationList,
-};
+use x509_parser::{self, pem::parse_x509_pem};
+
+#[cfg(target_os = "linux")]
+use crate::REPORT_DATA_SIZE;
 
 const AWS_VLEK_TYPE: Uuid = Uuid::from_fields(
     0xa8074bc2,
@@ -40,65 +31,48 @@ const AWS_VLEK_TYPE: Uuid = Uuid::from_fields(
     &[0xaa, 0xe6, 0x39, 0xc0, 0x45, 0xa0, 0xb8, 0xa1],
 );
 
-const KDS_CERT_SITE: &str = "https://kdsintf.amd.com";
-const KDS_VCEK: &str = "/vcek/v1";
-const KDS_VLEK: &str = "/vlek/v1";
-const KDS_CERT_CHAIN: &str = "cert_chain";
-const KDS_CRL: &str = "crl";
 const SEV_PROD_NAME: &str = "Milan";
-pub const SEV_REPORT_DATA_SIZE: usize = 64;
 
 #[repr(C)]
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SEVQuote {
+pub struct Quote {
     pub report: AttestationReport,
     pub certs: Vec<CertTableEntry>,
 }
 
-impl From<(AttestationReport, Vec<CertTableEntry>)> for SEVQuote {
+impl From<(AttestationReport, Vec<CertTableEntry>)> for Quote {
     fn from(attr: (AttestationReport, Vec<CertTableEntry>)) -> Self {
-        SEVQuote {
+        Quote {
             report: attr.0,
             certs: attr.1,
         }
     }
 }
 
+/// Parse the raw quote into an AttestationReport
+pub fn parse_quote(raw_quote: &[u8]) -> Result<Quote, Error> {
+    bincode::deserialize(raw_quote)
+        .map_err(|_| Error::InvalidFormat("Can't deserialize the SEV report bytes".to_owned()))
+}
+
 /// Get the quote of the SEV VM
 ///
 /// Source: <https://www.amd.com/content/dam/amd/en/documents/developer/58217-epyc-9004-ug-platform-attestation-using-virtee-snp.pdf>
 #[cfg(target_os = "linux")]
-pub fn get_quote(user_report_data: &[u8]) -> Result<SEVQuote, Error> {
+pub fn get_quote(user_report_data: &[u8; REPORT_DATA_SIZE]) -> Result<Vec<u8>, Error> {
     // Open a connection to the firmware.
     let mut fw = Firmware::open()?;
 
-    if user_report_data.len() > SEV_REPORT_DATA_SIZE {
-        return Err(Error::InvalidFormat(format!(
-            "The user report data file should contain at most 64 bytes (read: {}B)",
-            user_report_data.len()
-        )));
-    }
-
-    let user_report_data = {
-        let padding = vec![0; SEV_REPORT_DATA_SIZE - user_report_data.len()];
-        [user_report_data, &padding].concat()
-    };
-
     // Request a standard attestation report.
-    let (report, certs) = fw.get_ext_report(
-        None,
-        Some(
-            user_report_data
-                .try_into()
-                .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
-        ),
-        None,
-    )?;
+    let (report, certs) = fw.get_ext_report(None, Some(*user_report_data), None)?;
 
-    Ok(SEVQuote {
+    let quote = Quote {
         report,
         certs: certs.unwrap_or(vec![]),
-    })
+    };
+
+    bincode::serialize(&quote)
+        .map_err(|_| Error::InvalidFormat("Can't serialize the SEV quote".to_owned()))
 }
 
 /// The verification of the quote includes:
@@ -113,22 +87,25 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<SEVQuote, Error> {
 /// Reference:
 /// - <https://www.amd.com/content/dam/amd/en/documents/epyc-technical-docs/specifications/57230.pdf>
 /// - <https://www.amd.com/content/dam/amd/en/documents/developer/58217-epyc-9004-ug-platform-attestation-using-virtee-snp.pdf>
-pub fn verify_quote(
-    quote: &AttestationReport,
-    certificates: &[CertTableEntry],
-    measurement: Option<[u8; 48]>,
-) -> Result<(), Error> {
+pub fn verify_quote(quote: &Quote, policy: &SevQuoteVerificationPolicy) -> Result<(), Error> {
+    // Check the policy
+    verify_quote_policy(&quote.report, policy)?;
+
     // Try to build the Chain object by dealing with various cases.
-    let vlek = certificates
+    let vlek = quote
+        .certs
         .iter()
         .find(|item| item.cert_type == CertType::OTHER(AWS_VLEK_TYPE));
-    let ark = certificates
+    let ark = quote
+        .certs
         .iter()
         .find(|item| item.cert_type == CertType::ARK);
-    let ask = certificates
+    let ask = quote
+        .certs
         .iter()
         .find(|item| item.cert_type == CertType::ASK);
-    let vcek = certificates
+    let vcek = quote
+        .certs
         .iter()
         .find(|item| item.cert_type == CertType::VCEK);
 
@@ -143,7 +120,11 @@ pub fn verify_quote(
         }),
         (None, None, None, None) => Ok(Chain {
             ca: request_amd_vcek_cert_chain(SEV_PROD_NAME)?,
-            vcek: request_vcek(SEV_PROD_NAME, quote.chip_id, quote.reported_tcb)?,
+            vcek: request_vcek(
+                SEV_PROD_NAME,
+                quote.report.chip_id,
+                quote.report.reported_tcb,
+            )?,
         }),
         (_, _, _, _) => Err(Error::Unimplemented(
             "Unhandled combination of ARK/ASK/VCEK/VLEK certificates".to_owned(),
@@ -154,10 +135,10 @@ pub fn verify_quote(
     verify_chain_certificates(&chain)?;
 
     // Check the quote has been signed by the VLEK/VCEK
-    (&chain, quote).verify()?;
+    (&chain, &quote.report).verify()?;
 
     // Check the revocation list
-    verify_revocation_list(&chain)?;
+    verify_revocation_list(&chain, SEV_PROD_NAME)?;
 
     let vcek_pem = chain.vcek.to_pem()?;
     let (rem, pem) = parse_x509_pem(&vcek_pem)?;
@@ -173,278 +154,9 @@ pub fn verify_quote(
         .map_err(|e| Error::X509ParserError(e.into()))?;
 
     // Check the TCB fields
-    verify_tcb(quote, &vcek)?;
-
-    // Check the measurement
-    if let Some(measurement) = measurement {
-        if quote.measurement != measurement {
-            return Err(Error::VerificationFailure(format!(
-                "Measurement miss-matches expected value ({})",
-                hex::encode(quote.measurement),
-            )));
-        }
-    }
+    verify_tcb(&quote.report, &vcek)?;
 
     Ok(())
-}
-
-/// Verify the certification chain against the AMD revocation list
-fn verify_revocation_list(chain: &Chain) -> Result<(), Error> {
-    // Get the crl
-    let url = format!("{KDS_CERT_SITE}{KDS_VCEK}/{SEV_PROD_NAME}/{KDS_CRL}");
-    debug!("Requesting CRL from: {url}");
-
-    let rsp = get(&url)?;
-    let status = rsp.status();
-    let body = rsp.bytes()?;
-
-    if !status.is_success() {
-        return Err(Error::ResponseAPIError(format!(
-            "Request to  {url} returns a {}: {}",
-            status,
-            String::from_utf8_lossy(&body),
-        )));
-    }
-
-    let body = body.to_vec();
-    let (res, crl) =
-        CertificateRevocationList::from_der(&body).map_err(|e| Error::X509ParserError(e.into()))?;
-
-    if !res.is_empty() {
-        return Err(Error::InvalidFormat(
-            "Root CA CRL parsing failed".to_owned(),
-        ));
-    }
-
-    // Verify that the crl has been signed by ARK
-    let ark = chain.ca.ark.to_der()?;
-    let (_, cert) = X509Certificate::from_der(&ark)?;
-
-    // TODO: OID_PKCS1_RSASSAPSS signature algorithm is not supported
-    // crl.verify_signature(cert.public_key())?;
-
-    // Verify ASK is not revoked
-    let is_revoked = crl
-        .iter_revoked_certificates()
-        .find(|revoked| revoked.raw_serial() == cert.raw_serial());
-
-    if is_revoked.is_some() {
-        return Err(Error::VerificationFailure(
-            "The ASK certificate has been revoked".to_owned(),
-        ));
-    }
-
-    // Verify VCEK is not revoked
-    let vcek = &chain.vcek.to_der()?;
-    let (_, cert) = X509Certificate::from_der(vcek)?;
-
-    let is_revoked = crl
-        .iter_revoked_certificates()
-        .find(|revoked| revoked.raw_serial() == cert.raw_serial());
-
-    if is_revoked.is_some() {
-        return Err(Error::VerificationFailure(
-            "The VCEK certificate has been revoked".to_owned(),
-        ));
-    }
-
-    Ok(())
-}
-
-/// Validate that the VLEK or VCEK certificate is signed by the AMD root of trust certificates
-fn verify_chain_certificates(cert_chain: &Chain) -> Result<(), Error> {
-    let ark = &cert_chain.ca.ark;
-    let ask = &cert_chain.ca.ask;
-    let vcek = &cert_chain.vcek;
-
-    if (ark, ark).verify().is_err() {
-        return Err(Error::VerificationFailure(
-            "The AMD ARK is not self-signed!".to_owned(),
-        ));
-    }
-
-    debug!("The AMD ARK was self-signed...");
-
-    if (ark, ask).verify().is_err() {
-        return Err(Error::VerificationFailure(
-            "The AMD ASK was not signed by the AMD ARK!".to_owned(),
-        ));
-    }
-
-    debug!("The AMD ASK was signed by the AMD ARK...");
-
-    if (ask, vcek).verify().is_err() {
-        return Err(Error::VerificationFailure(
-            "The VCEK was not signed by the AMD ASK!".to_owned(),
-        ));
-    }
-
-    debug!("The VCEK was signed by the AMD ASK...");
-
-    Ok(())
-}
-
-/// Validate the guest Trusted Compute Base by verifying the following fields in an attestation report and a VCEK:
-/// - Bootloader
-/// - TEE
-/// - SNP
-/// - Microcode
-/// - Chip ID
-fn verify_tcb(report: &AttestationReport, cert: &X509Certificate) -> Result<(), Error> {
-    let extensions: HashMap<Oid, &X509Extension> = cert.extensions_map()?;
-    if let Some(cert_bl) = extensions.get(&SnpOid::BootLoader.oid()) {
-        if !check_cert_ext_byte(cert_bl, report.reported_tcb.bootloader)? {
-            return Err(Error::VerificationFailure(
-                "Report TCB Boot Loader and Certificate Boot Loader mismatch
-    encountered."
-                    .to_owned(),
-            ));
-        }
-    }
-
-    if let Some(cert_tee) = extensions.get(&SnpOid::Tee.oid()) {
-        if !check_cert_ext_byte(cert_tee, report.reported_tcb.tee)? {
-            return Err(Error::VerificationFailure(
-                "Report TCB TEE and Certificate TEE mismatch encountered.".to_owned(),
-            ));
-        }
-        debug!("Reported TCB TEE from certificate matches the attestation report.");
-    }
-
-    if let Some(cert_snp) = extensions.get(&SnpOid::Snp.oid()) {
-        if !check_cert_ext_byte(cert_snp, report.reported_tcb.snp)? {
-            return Err(Error::VerificationFailure(
-                "Report TCB SNP and Certificate SNP mismatch encountered.".to_owned(),
-            ));
-        }
-        debug!("Reported TCB SNP from certificate matches the attestation report.");
-    }
-
-    // TODO: for some reason (unknown...), it's not equal on AWS...
-    // if let Some(cert_ucode) = extensions.get(&SnpOid::Ucode.oid()) {
-    //     if !check_cert_ext_byte(cert_ucode, report.reported_tcb.microcode)? {
-    //         return Err(Error::VerificationFailure(
-    //             "Report TCB Microcode and Certificate Microcode mismatch
-    //     encountered."
-    //                 .to_owned(),
-    //         ));
-    //     }
-    //     debug!(
-    //         "Reported TCB Microcode from certificate matches the attestation
-    //     report."
-    //     );
-    // }
-
-    if let Some(cert_hwid) = extensions.get(&SnpOid::HwId.oid()) {
-        if !check_cert_ext_bytes(cert_hwid, &report.chip_id) {
-            return Err(Error::VerificationFailure(
-                "Report Chip ID and Certificate Chip ID mismatch
-        encountered."
-                    .to_owned(),
-            ));
-        }
-        debug!("Chip ID from certificate matches the attestation report.");
-    }
-
-    Ok(())
-}
-
-/// Request the AMD cert chain which signed the VLEK certificate
-fn request_amd_vlek_cert_chain(sev_prod_name: &str) -> Result<ca::Chain, Error> {
-    let url = format!("{KDS_CERT_SITE}{KDS_VLEK}/{sev_prod_name}/{KDS_CERT_CHAIN}");
-    request_amd_cert_chain(&url)
-}
-
-/// Request the AMD cert chain which signed the VCEK certificate
-fn request_amd_vcek_cert_chain(sev_prod_name: &str) -> Result<ca::Chain, Error> {
-    let url = format!("{KDS_CERT_SITE}{KDS_VCEK}/{sev_prod_name}/{KDS_CERT_CHAIN}");
-    request_amd_cert_chain(&url)
-}
-
-/// Requests the certificate-chain (AMD ASK + AMD ARK)
-/// These may be used to verify the downloaded VCEK is authentic.
-fn request_amd_cert_chain(url: &str) -> Result<ca::Chain, Error> {
-    // Should make -> https://kdsintf.amd.com/vcek/v1/{SEV_PROD_NAME}/cert_chain
-    debug!("Requesting AMD certificate-chain from: {url}");
-    let rsp = get(url)?;
-    let status = rsp.status();
-    let body = rsp.bytes()?;
-
-    if !status.is_success() {
-        return Err(Error::ResponseAPIError(format!(
-            "Request to  {url} returns a {}: {}",
-            status,
-            String::from_utf8_lossy(&body),
-        )));
-    }
-
-    debug!("Extracting certificate chain...");
-    let chain = get_certificate_chain_from_pem(&body)?;
-
-    if chain.len() != 2 {
-        return Err(Error::InvalidFormat(format!(
-            "Unexpected certificate chain length {} ",
-            chain.len()
-        )));
-    }
-
-    // Create a ca chain with ark and ask
-    Ok(ca::Chain::from_der(&chain[1], &chain[0])?)
-}
-
-pub(crate) fn get_certificate_chain_from_pem(data: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
-    let mut chain = Vec::new();
-
-    for pem in Pem::iter_from_buffer(data) {
-        match pem {
-            Ok(pem) => {
-                if &pem.label != "CERTIFICATE" {
-                    return Err(Error::InvalidFormat(
-                        "Not a certificate or certificate is malformed".to_owned(),
-                    ));
-                }
-
-                chain.push(pem.contents);
-            }
-
-            Err(e) => {
-                return Err(Error::InvalidFormat(format!(
-                    "Not a certificate or certificate is malformed {e:?}"
-                )));
-            }
-        }
-    }
-
-    Ok(chain)
-}
-
-/// Requests the VCEK for the specified chip and TCP
-pub fn request_vcek(
-    sev_prod_name: &str,
-    chip_id: [u8; 64],
-    reported_tcb: TcbVersion,
-) -> Result<Certificate, Error> {
-    let hw_id = hex::encode(chip_id);
-    let url = format!(
-        "{KDS_CERT_SITE}{KDS_VCEK}/{sev_prod_name}/{hw_id}?blSPL={:02}&teeSPL={:02}&snpSPL={:02}&ucodeSPL={:02}",
-        reported_tcb.bootloader, reported_tcb.tee, reported_tcb.snp, reported_tcb.microcode
-    );
-    debug!("Requesting VCEK from: {url}\n");
-
-    let rsp = get(&url)?;
-    let status = rsp.status();
-    let body = rsp.bytes()?;
-
-    if !status.is_success() {
-        return Err(Error::ResponseAPIError(format!(
-            "Request to  {url} returns a {}: {}",
-            status,
-            String::from_utf8_lossy(&body),
-        )));
-    }
-
-    let body = body.to_vec();
-    Ok(Certificate::from_der(&body)?)
 }
 
 #[cfg(test)]
@@ -460,14 +172,19 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_quote() {
+    fn test_sev_verify_quote() {
         init();
         let raw_report = include_bytes!("../data/report.bin");
 
-        let quote: SEVQuote = bincode::deserialize(raw_report)
-            .map_err(|_| Error::InvalidFormat("Can't deserialize the SEV report bytes".to_owned()))
-            .unwrap();
+        let quote = parse_quote(raw_report).unwrap();
 
-        assert!(verify_quote(&quote.report, &quote.certs, None).is_ok());
+        assert!(verify_quote(
+            &quote,
+            &SevQuoteVerificationPolicy {
+                measurement: Some(hex::decode("c2c84b9364fc9f0f54b04534768c860c6e0e386ad98b96e8b98eca46ac8971d05c531ba48373f054c880cfd1f4a0a84e").unwrap().try_into().unwrap()),
+                report_data: Some(hex::decode("0d155251f139f682dc4ea2798feceed7c475461c8faecf7496401500956624540000000000000000000000000000000000000000000000000000000000000000").unwrap().try_into().unwrap()) 
+            }
+        )
+        .is_ok());
     }
 }

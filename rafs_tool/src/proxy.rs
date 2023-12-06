@@ -60,7 +60,10 @@ impl ProxyArgs {
         let private_key = EcKey::generate(&group)?;
 
         // Step 2: Generate the quote
-        let quote = get_quote(&sha256(&private_key.public_key_to_der()?))?;
+        let mut inner_user_report_data = [0u8; sev_quote::REPORT_DATA_SIZE];
+        let report_data = sha256(&private_key.public_key_to_der()?);
+        inner_user_report_data[0..report_data.len()].copy_from_slice(&report_data);
+        let quote = get_quote(&inner_user_report_data)?;
 
         // Step 3: Store the quote and the key
         let proxy_public_key_path = self.shared_secret.join(PathBuf::from("key.pub"));
