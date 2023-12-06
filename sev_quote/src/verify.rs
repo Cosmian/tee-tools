@@ -10,13 +10,9 @@ use asn1_rs::{FromDer, Oid};
 
 use log::debug;
 
-use reqwest::blocking::get;
-use sev::{
-    certs::snp::Verifiable,
-    firmware::{guest::*, host::TcbVersion},
-};
+use sev::{certs::snp::Verifiable, firmware::guest::*};
 
-use sev::certs::snp::{ca, Certificate, Chain};
+use sev::certs::snp::{ca, Chain};
 
 use x509_parser::{
     self,
@@ -25,33 +21,10 @@ use x509_parser::{
     revocation_list::CertificateRevocationList,
 };
 
-const KDS_CERT_SITE: &str = "https://kdsintf.amd.com";
-const KDS_VCEK: &str = "/vcek/v1";
-const KDS_VLEK: &str = "/vlek/v1";
-const KDS_CERT_CHAIN: &str = "cert_chain";
-const KDS_CRL: &str = "crl";
-
 /// Verify the certification chain against the AMD revocation list
-pub(crate) fn verify_revocation_list(chain: &Chain, sev_prod_name: &str) -> Result<(), Error> {
-    // Get the crl
-    let url = format!("{KDS_CERT_SITE}{KDS_VCEK}/{sev_prod_name}/{KDS_CRL}");
-    debug!("Requesting CRL from: {url}");
-
-    let rsp = get(&url)?;
-    let status = rsp.status();
-    let body = rsp.bytes()?;
-
-    if !status.is_success() {
-        return Err(Error::ResponseAPIError(format!(
-            "Request to  {url} returns a {}: {}",
-            status,
-            String::from_utf8_lossy(&body),
-        )));
-    }
-
-    let body = body.to_vec();
+pub(crate) fn verify_revocation_list(chain: &Chain, crl: &[u8]) -> Result<(), Error> {
     let (res, crl) =
-        CertificateRevocationList::from_der(&body).map_err(|e| Error::X509ParserError(e.into()))?;
+        CertificateRevocationList::from_der(crl).map_err(|e| Error::X509ParserError(e.into()))?;
 
     if !res.is_empty() {
         return Err(Error::InvalidFormat(
@@ -192,37 +165,11 @@ pub(crate) fn verify_tcb(report: &AttestationReport, cert: &X509Certificate) -> 
     Ok(())
 }
 
-/// Request the AMD cert chain which signed the VLEK certificate
-pub(crate) fn request_amd_vlek_cert_chain(sev_prod_name: &str) -> Result<ca::Chain, Error> {
-    let url = format!("{KDS_CERT_SITE}{KDS_VLEK}/{sev_prod_name}/{KDS_CERT_CHAIN}");
-    request_amd_cert_chain(&url)
-}
-
-/// Request the AMD cert chain which signed the VCEK certificate
-pub(crate) fn request_amd_vcek_cert_chain(sev_prod_name: &str) -> Result<ca::Chain, Error> {
-    let url = format!("{KDS_CERT_SITE}{KDS_VCEK}/{sev_prod_name}/{KDS_CERT_CHAIN}");
-    request_amd_cert_chain(&url)
-}
-
 /// Requests the certificate-chain (AMD ASK + AMD ARK)
 /// These may be used to verify the downloaded VCEK is authentic.
-fn request_amd_cert_chain(url: &str) -> Result<ca::Chain, Error> {
-    // Should make -> https://kdsintf.amd.com/vcek/v1/{SEV_PROD_NAME}/cert_chain
-    debug!("Requesting AMD certificate-chain from: {url}");
-    let rsp = get(url)?;
-    let status = rsp.status();
-    let body = rsp.bytes()?;
-
-    if !status.is_success() {
-        return Err(Error::ResponseAPIError(format!(
-            "Request to  {url} returns a {}: {}",
-            status,
-            String::from_utf8_lossy(&body),
-        )));
-    }
-
+pub(crate) fn bytes_to_chain(bytes: &[u8]) -> Result<ca::Chain, Error> {
     debug!("Extracting certificate chain...");
-    let chain = get_certificate_chain_from_pem(&body)?;
+    let chain = get_certificate_chain_from_pem(bytes)?;
 
     if chain.len() != 2 {
         return Err(Error::InvalidFormat(format!(
@@ -259,35 +206,6 @@ pub(crate) fn get_certificate_chain_from_pem(data: &[u8]) -> Result<Vec<Vec<u8>>
     }
 
     Ok(chain)
-}
-
-/// Requests the VCEK for the specified chip and TCP
-pub(crate) fn request_vcek(
-    sev_prod_name: &str,
-    chip_id: [u8; 64],
-    reported_tcb: TcbVersion,
-) -> Result<Certificate, Error> {
-    let hw_id = hex::encode(chip_id);
-    let url = format!(
-        "{KDS_CERT_SITE}{KDS_VCEK}/{sev_prod_name}/{hw_id}?blSPL={:02}&teeSPL={:02}&snpSPL={:02}&ucodeSPL={:02}",
-        reported_tcb.bootloader, reported_tcb.tee, reported_tcb.snp, reported_tcb.microcode
-    );
-    debug!("Requesting VCEK from: {url}\n");
-
-    let rsp = get(&url)?;
-    let status = rsp.status();
-    let body = rsp.bytes()?;
-
-    if !status.is_success() {
-        return Err(Error::ResponseAPIError(format!(
-            "Request to  {url} returns a {}: {}",
-            status,
-            String::from_utf8_lossy(&body),
-        )));
-    }
-
-    let body = body.to_vec();
-    Ok(Certificate::from_der(&body)?)
 }
 
 /// Verify the quote body against expected values

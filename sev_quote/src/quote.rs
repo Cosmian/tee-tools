@@ -1,9 +1,13 @@
 use crate::{
     error::Error,
+    kds_client::{
+        fetch_amd_vcek_cert_chain, fetch_amd_vlek_cert_chain, fetch_revocation_list, fetch_vcek,
+        SevProdName,
+    },
     policy::SevQuoteVerificationPolicy,
     verify::{
-        request_amd_vcek_cert_chain, request_amd_vlek_cert_chain, request_vcek,
-        verify_chain_certificates, verify_quote_policy, verify_revocation_list, verify_tcb,
+        bytes_to_chain, verify_chain_certificates, verify_quote_policy, verify_revocation_list,
+        verify_tcb,
     },
 };
 
@@ -31,7 +35,8 @@ const AWS_VLEK_TYPE: Uuid = Uuid::from_fields(
     &[0xaa, 0xe6, 0x39, 0xc0, 0x45, 0xa0, 0xb8, 0xa1],
 );
 
-const SEV_PROD_NAME: &str = "Milan";
+const SEV_PROD_NAME: SevProdName = SevProdName::Milan;
+const KDS_CERT_SITE: &str = "https://kdsintf.amd.com";
 
 #[repr(C)]
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -111,7 +116,7 @@ pub fn verify_quote(quote: &Quote, policy: &SevQuoteVerificationPolicy) -> Resul
 
     let chain = match (vlek, ark, ask, vcek) {
         (Some(vlek), _, _, _) => Ok(Chain {
-            ca: request_amd_vlek_cert_chain(SEV_PROD_NAME)?,
+            ca: bytes_to_chain(&fetch_amd_vlek_cert_chain(KDS_CERT_SITE, SEV_PROD_NAME)?)?,
             vcek: Certificate::from_der(&vlek.data)?,
         }),
         (None, Some(ark), Some(ask), Some(vcek)) => Ok(Chain {
@@ -119,12 +124,13 @@ pub fn verify_quote(quote: &Quote, policy: &SevQuoteVerificationPolicy) -> Resul
             vcek: Certificate::from_der(&vcek.data)?,
         }),
         (None, None, None, None) => Ok(Chain {
-            ca: request_amd_vcek_cert_chain(SEV_PROD_NAME)?,
-            vcek: request_vcek(
+            ca: bytes_to_chain(&fetch_amd_vcek_cert_chain(KDS_CERT_SITE, SEV_PROD_NAME)?)?,
+            vcek: Certificate::from_der(&fetch_vcek(
+                KDS_CERT_SITE,
                 SEV_PROD_NAME,
                 quote.report.chip_id,
                 quote.report.reported_tcb,
-            )?,
+            )?)?,
         }),
         (_, _, _, _) => Err(Error::Unimplemented(
             "Unhandled combination of ARK/ASK/VCEK/VLEK certificates".to_owned(),
@@ -138,7 +144,8 @@ pub fn verify_quote(quote: &Quote, policy: &SevQuoteVerificationPolicy) -> Resul
     (&chain, &quote.report).verify()?;
 
     // Check the revocation list
-    verify_revocation_list(&chain, SEV_PROD_NAME)?;
+    let crl = fetch_revocation_list(KDS_CERT_SITE, SEV_PROD_NAME)?;
+    verify_revocation_list(&chain, &crl)?;
 
     let vcek_pem = chain.vcek.to_pem()?;
     let (rem, pem) = parse_x509_pem(&vcek_pem)?;
