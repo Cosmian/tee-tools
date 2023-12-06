@@ -201,7 +201,8 @@ mod tests {
             &quote,
             &SevQuoteVerificationPolicy {
                 measurement: Some(hex::decode("c2c84b9364fc9f0f54b04534768c860c6e0e386ad98b96e8b98eca46ac8971d05c531ba48373f054c880cfd1f4a0a84e").unwrap().try_into().unwrap()),
-                report_data: Some(hex::decode("0d155251f139f682dc4ea2798feceed7c475461c8faecf7496401500956624540000000000000000000000000000000000000000000000000000000000000000").unwrap().try_into().unwrap()) 
+                report_data: Some(hex::decode("0d155251f139f682dc4ea2798feceed7c475461c8faecf7496401500956624540000000000000000000000000000000000000000000000000000000000000000").unwrap().try_into().unwrap()) ,
+                ..Default::default()
             }
         )
         .is_ok());
