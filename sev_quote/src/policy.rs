@@ -2,7 +2,7 @@ use crate::{quote::Quote, REPORT_DATA_SIZE};
 use serde::{Deserialize, Serialize};
 use serde_hex::{SerHexOpt, Strict};
 
-#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Copy)]
 /// Values to compare with the sev quote values
 pub struct SevQuoteVerificationPolicy {
     /// Did the hypervisor set the guest up as you expected?

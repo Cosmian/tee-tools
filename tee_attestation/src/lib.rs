@@ -30,7 +30,7 @@ pub enum TeeQuote {
     Tdx(Box<TdxQuote>),
 }
 
-#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Copy)]
 pub struct TeePolicy {
     pub sgx: Option<SgxQuoteVerificationPolicy>,
     pub sev: Option<SevQuoteVerificationPolicy>,
@@ -188,7 +188,7 @@ pub fn verify_quote(raw_quote: &[u8], policy: &TeePolicy) -> Result<(), Error> {
                 &policy
                     .sev
                     .as_ref()
-                    .map_or_else(SevQuoteVerificationPolicy::default, |p| p.clone()),
+                    .map_or_else(SevQuoteVerificationPolicy::default, |p| *p),
             )?)
         }
         TeeQuote::Sgx(_) => {
@@ -198,7 +198,7 @@ pub fn verify_quote(raw_quote: &[u8], policy: &TeePolicy) -> Result<(), Error> {
                 &policy
                     .sgx
                     .as_ref()
-                    .map_or_else(SgxQuoteVerificationPolicy::default, |p| p.clone()),
+                    .map_or_else(SgxQuoteVerificationPolicy::default, |p| *p),
             )?)
         }
         TeeQuote::Tdx(_) => {
@@ -208,7 +208,7 @@ pub fn verify_quote(raw_quote: &[u8], policy: &TeePolicy) -> Result<(), Error> {
                 &policy
                     .tdx
                     .as_ref()
-                    .map_or_else(TdxQuoteVerificationPolicy::default, |p| p.clone()),
+                    .map_or_else(TdxQuoteVerificationPolicy::default, |p| *p),
             )?)
         }
     }

@@ -3,7 +3,7 @@ use serde_hex::{SerHexOpt, Strict};
 
 use crate::{quote::Quote, REPORT_DATA_SIZE};
 
-#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Copy)]
 /// Values to compare with the tdx quote header values
 pub struct TdxQuoteHeaderVerificationPolicy {
     pub minimum_qe_svn: Option<u16>,
@@ -12,7 +12,7 @@ pub struct TdxQuoteHeaderVerificationPolicy {
     pub qe_vendor_id: Option<[u8; 16]>,
 }
 
-#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Copy)]
 /// Values to compare with the tdx quote header values
 pub struct TdxQuoteBodyVerificationPolicy {
     #[serde(with = "SerHexOpt::<Strict>")]
@@ -34,7 +34,7 @@ pub struct TdxQuoteBodyVerificationPolicy {
     pub report_data: Option<[u8; REPORT_DATA_SIZE]>,
 }
 
-#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Copy)]
 /// Values to compare with the tdx quote values
 pub struct TdxQuoteVerificationPolicy {
     pub header: TdxQuoteHeaderVerificationPolicy,

@@ -6,7 +6,7 @@ use crate::{
     REPORT_DATA_SIZE,
 };
 
-#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Copy)]
 /// Values to compare with the sgx quote header values
 pub struct SgxQuoteHeaderVerificationPolicy {
     pub minimum_qe_svn: Option<u16>,
@@ -15,7 +15,7 @@ pub struct SgxQuoteHeaderVerificationPolicy {
     pub qe_vendor_id: Option<[u8; 16]>,
 }
 
-#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Copy)]
 /// Values to compare with the sgx quote header values
 pub struct SgxQuoteBodyVerificationPolicy {
     #[serde(with = "SerHexOpt::<Strict>")]
@@ -26,7 +26,7 @@ pub struct SgxQuoteBodyVerificationPolicy {
     pub report_data: Option<[u8; REPORT_DATA_SIZE]>,
 }
 
-#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Copy)]
 /// Values to compare with the sgx quote values
 pub struct SgxQuoteVerificationPolicy {
     pub header: SgxQuoteHeaderVerificationPolicy,
