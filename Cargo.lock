@@ -2109,6 +2109,7 @@ dependencies = [
 [[package]]
 name = "sev"
 version = "2.0.2"
+source = "git+https://github.com/Cosmian/sev#618636d7aad507ecc732eb29bfdc2418ed9809a6"
 dependencies = [
  "bincode",
  "bitfield",
