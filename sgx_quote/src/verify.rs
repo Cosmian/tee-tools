@@ -1,30 +1,130 @@
 use crate::error::Error;
-use crate::quote::{
-    AuthData, EcdsaSigData, QUOTE_BODY_SIZE, QUOTE_QE_REPORT_OFFSET, QUOTE_QE_REPORT_SIZE,
-};
+use crate::quote::{EcdsaSigData, ReportBody, QUOTE_BODY_SIZE};
 
 use chrono::{NaiveDateTime, Utc};
-use elliptic_curve::pkcs8::DecodePublicKey;
+
 use log::debug;
 use p256::ecdsa::signature::Verifier;
 use p256::ecdsa::{Signature, VerifyingKey};
+use p256::elliptic_curve::sec1::FromEncodedPoint;
+use p256::pkcs8::DecodePublicKey;
 use p256::{AffinePoint, EncodedPoint};
-use reqwest::blocking::get;
-use serde::Deserialize;
+use pccs_client::{
+    get_pck_crl, get_qe_identity, get_root_ca_crl, get_root_ca_crl_from_uri, get_tcbinfo,
+    IntelTeeType, PckCa,
+};
+use serde::{Deserialize, Serialize};
+use serde_hex::{SerHex, StrictCap};
 use sgx_pck_extension::SgxPckExtension;
 use sha2::{Digest, Sha256};
 use x509_parser::certificate::X509Certificate;
+use x509_parser::extensions::{GeneralName, ParsedExtension};
+use x509_parser::oid_registry::asn1_rs::oid;
+use x509_parser::oid_registry::Oid;
 use x509_parser::parse_x509_certificate;
 use x509_parser::prelude::{FromDer, Pem};
 use x509_parser::revocation_list::CertificateRevocationList;
 
-use elliptic_curve::sec1::FromEncodedPoint;
+const CRL_DISTRIBUTION_POINTS_EXTENSION_OID: Oid = oid!(2.5.29 .31);
 
-pub(crate) fn verify_pck_chain_and_tcb(
-    raw_quote: &[u8],
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct QeIdentity {
+    pub enclave_identity: EnclaveIdentity,
+    #[serde(with = "SerHex::<StrictCap>")]
+    pub signature: [u8; 64],
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct EnclaveIdentity {
+    pub id: String,
+    pub version: u32,
+    pub issue_date: String,
+    pub next_update: String,
+    pub tcb_evaluation_data_number: u32,
+    #[serde(with = "SerHex::<StrictCap>")]
+    pub miscselect: [u8; 4],
+    #[serde(with = "SerHex::<StrictCap>")]
+    pub miscselect_mask: [u8; 4],
+    #[serde(with = "SerHex::<StrictCap>")]
+    pub attributes: [u8; 16],
+    #[serde(with = "SerHex::<StrictCap>")]
+    pub attributes_mask: [u8; 16],
+    #[serde(with = "SerHex::<StrictCap>")]
+    pub mrsigner: [u8; 32],
+    pub isvprodid: u16,
+    pub tcb_levels: Vec<TcbLevel>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct Tcb {
+    pub isvsvn: u16,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+enum TcbComponentStatus {
+    UpToDate,
+    SWHardeningNeeded,
+    ConfigurationNeeded,
+    ConfigurationAndSWHardeningNeeded,
+    OutOfDate,
+    OutOfDateConfigurationNeeded,
+    Revoked,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct TcbLevel {
+    pub tcb: Tcb,
+    pub tcb_date: String,
+    pub tcb_status: TcbComponentStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub advisory: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct TcbInfo {
+    version: u32,
+    id: String,
+    next_update: String,
+    #[serde(with = "SerHex::<StrictCap>")]
+    pub pce_id: [u8; 2],
+    #[serde(with = "SerHex::<StrictCap>")]
+    pub fmspc: [u8; 6],
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct TcbInfoData {
+    tcb_info: TcbInfo,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct TcbInfoDataRaw {
+    tcb_info: serde_json::Value,
+    #[serde(with = "SerHex::<StrictCap>")]
+    pub signature: [u8; 64],
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Verify all the collaterals:
+/// - TCB
+/// - PCK cert chains
+/// - QEIdentity
+pub fn verify_collaterals(
     certification_data: &[u8],
+    qe_report: &ReportBody,
+    qe_report_raw: &[u8],
     qe_report_signature: &[u8],
+    qe_report_data: &[u8],
+    signature_attest_pub_key: &[u8],
+    auth_data: &[u8],
     pccs_url: &str,
+    tee_type: IntelTeeType,
 ) -> Result<(), Error> {
     debug!("Extracting certificate chain...");
     let chain = get_certificate_chain_from_pem(certification_data)?;
@@ -43,7 +143,70 @@ pub(crate) fn verify_pck_chain_and_tcb(
     let (_, root_ca_cert) =
         parse_x509_certificate(&chain[2]).map_err(|e| Error::X509ParserError(e.into()))?;
 
-    debug!("Verifying certificates signature...");
+    verify_pck_certs(&pck_cert, &pck_ca_cert, &root_ca_cert)?;
+
+    if tee_type == IntelTeeType::Sgx {
+        debug!("Verifying root ca crl...");
+
+        let root_ca_crl = get_root_ca_crl(pccs_url)?;
+        verify_root_ca_crl(&root_ca_cert, &root_ca_crl)?;
+    } else {
+        let (qe_identity_issuer_chain, raw_qe_identity) = get_qe_identity(pccs_url, tee_type)?;
+        let (qe_identity, crl_distribution_points) =
+            verify_qe_identity(&qe_identity_issuer_chain, &raw_qe_identity, &root_ca_cert)?;
+
+        verify_qe_report(qe_report, qe_identity)?;
+
+        let mut all_error = true;
+        for crl_url in &crl_distribution_points {
+            if let Ok(ca_crl) = get_root_ca_crl_from_uri(crl_url) {
+                all_error = false;
+                verify_root_ca_crl(&root_ca_cert, &ca_crl)?;
+            }
+        }
+
+        if all_error {
+            return Err(Error::VerificationFailure(format!(
+                "No root ca crl fetched with success from {crl_distribution_points:?}"
+            )));
+        }
+    }
+
+    debug!("Verifying pck crl...");
+    let (pck_crl_issuer_chain, pck_crl) = get_pck_crl(pccs_url, get_pck_ca(&pck_ca_cert)?)?;
+    verify_pck_cert_crl(&pck_crl_issuer_chain, &pck_crl, &root_ca_cert, &pck_ca_cert)?;
+
+    debug!("Verifying tcb info...");
+    let pck_extension = SgxPckExtension::from_pem_certificate_content(&chain[0])?;
+    let (tcb_info_issuer_chain, raw_tcb_info) =
+        get_tcbinfo(pccs_url, tee_type, &pck_extension.fmspc)?;
+    verify_tcb_info(
+        &tcb_info_issuer_chain,
+        &raw_tcb_info,
+        tee_type,
+        &root_ca_cert,
+        &pck_extension,
+    )?;
+
+    debug!("Verifying QE report signature...");
+    verify_qe_report_signature(
+        qe_report_raw,
+        qe_report_signature,
+        qe_report_data,
+        pck_cert.public_key().raw,
+        signature_attest_pub_key,
+        auth_data,
+    )?;
+
+    Ok(())
+}
+
+fn verify_pck_certs(
+    pck_cert: &X509Certificate,
+    pck_ca_cert: &X509Certificate,
+    root_ca_cert: &X509Certificate,
+) -> Result<(), Error> {
+    debug!("Verifying pck chain certificates signature...");
     root_ca_cert
         .verify_signature(Some(root_ca_cert.public_key()))
         .map_err(|_| {
@@ -83,40 +246,44 @@ pub(crate) fn verify_pck_chain_and_tcb(
         ));
     }
 
-    debug!("Verifying root ca crl");
-    verify_root_ca_crl(pccs_url, &root_ca_cert)?;
+    Ok(())
+}
 
-    debug!("Verifying pck crl");
-    verify_pck_cert_crl(pccs_url, &root_ca_cert, &pck_ca_cert)?;
+/// - Verify the QE Report signature using PCK Leaf certificate
+/// - Verify QE Report Data
+fn verify_qe_report_signature(
+    qe_report: &[u8],
+    qe_report_signature: &[u8],
+    qe_report_data: &[u8],
+    pck_cert_der: &[u8],
+    signature_attest_pub_key: &[u8],
+    auth_data: &[u8],
+) -> Result<(), Error> {
+    debug!("Verifying the QE Report signature using PCK Leaf certificate");
+    let pck_pk = VerifyingKey::from_public_key_der(pck_cert_der)?;
+    pck_pk.verify(qe_report, &Signature::from_slice(qe_report_signature)?)?;
 
-    debug!("Verifying tcb info");
-    verify_tcb_info(
-        pccs_url,
-        &root_ca_cert,
-        &SgxPckExtension::from_pem_certificate_content(&chain[0])?,
-    )?;
+    debug!("Verifying QE Report Data");
+    let mut pubkey_hash = Sha256::new();
+    pubkey_hash.update(signature_attest_pub_key);
+    pubkey_hash.update(auth_data);
+    let expected_qe_report_data = &pubkey_hash.finalize()[..];
 
-    debug!("Verifying QE report signature");
-    let pck_pk = VerifyingKey::from_public_key_der(pck_cert.public_key().raw)?;
-    pck_pk.verify(
-        raw_quote
-            .get(QUOTE_QE_REPORT_OFFSET..QUOTE_QE_REPORT_SIZE + QUOTE_QE_REPORT_OFFSET)
-            .ok_or_else(|| {
-                Error::InvalidFormat(
-                    "Bad offset extraction to check QE report signature".to_owned(),
-                )
-            })?,
-        &Signature::from_slice(qe_report_signature)?,
-    )?;
+    if &qe_report_data[..32] != expected_qe_report_data {
+        return Err(Error::VerificationFailure(
+            "Unexpected REPORTDATA in QE report".to_owned(),
+        ));
+    }
 
     Ok(())
 }
 
+/// Verify Quote Body using attestation key and signature present in the quote
 pub(crate) fn verify_quote_signature(
     raw_quote: &[u8],
-    auth_data: &AuthData,
     signature: &EcdsaSigData,
 ) -> Result<(), Error> {
+    debug!("Verifying Quote Body using attestation key and signature present in the quote");
     let pubkey = [vec![0x04], signature.attest_pub_key.to_vec()].concat();
     let pubkey = EncodedPoint::from_bytes(pubkey).map_err(|e| Error::CryptoError(e.to_string()))?;
     let point = Option::from(AffinePoint::from_encoded_point(&pubkey)).ok_or_else(|| {
@@ -129,73 +296,87 @@ pub(crate) fn verify_quote_signature(
         &Signature::from_slice(&signature.signature)?,
     )?;
 
-    let mut pubkey_hash = Sha256::new();
-    pubkey_hash.update(signature.attest_pub_key);
-    pubkey_hash.update(&auth_data.auth_data);
-    let expected_qe_report_data = &pubkey_hash.finalize()[..];
+    Ok(())
+}
 
-    if &signature.qe_report.report_data[..32] != expected_qe_report_data {
-        return Err(Error::VerificationFailure(
-            "Unexpected REPORTDATA in QE report".to_owned(),
-        ));
+fn verify_qe_report(qe_report: &ReportBody, qe_identity: QeIdentity) -> Result<(), Error> {
+    debug!("Verifying QE Report against QE Identity");
+    let miscselect_mask = u32::from_le_bytes(qe_identity.enclave_identity.miscselect_mask);
+    let miscselect = u32::from_le_bytes(qe_identity.enclave_identity.miscselect);
+
+    let miscselect_mask = qe_report.misc_select & miscselect_mask;
+
+    if miscselect_mask != miscselect {
+        return Err(Error::VerificationFailure("Miscselect value from Intel PCS's reported QE Identity is not equal to miscselect value from Quote QE Report".to_owned()));
+    }
+
+    let flags = u64::from_le_bytes(
+        qe_identity.enclave_identity.attributes_mask[0..8]
+            .try_into()
+            .expect("Can't happen"),
+    ) & qe_report.flags;
+    let xfrm = u64::from_le_bytes(
+        qe_identity.enclave_identity.attributes_mask[8..16]
+            .try_into()
+            .expect("Can't happen"),
+    ) & qe_report.xfrm;
+
+    if flags
+        != u64::from_le_bytes(
+            qe_identity.enclave_identity.attributes[0..8]
+                .try_into()
+                .expect("Can't happen"),
+        )
+    {
+        return Err(Error::VerificationFailure("Flags value from Intel PCS's reported QE Identity is not equal to flags value from Quote QE Report".to_owned()));
+    }
+
+    if xfrm
+        != u64::from_le_bytes(
+            qe_identity.enclave_identity.attributes[8..16]
+                .try_into()
+                .expect("Can't happen"),
+        )
+    {
+        return Err(Error::VerificationFailure("XFRM value from Intel PCS's reported QE Identity is not equal to flags value from Quote QE Report".to_owned()));
+    }
+
+    if qe_identity.enclave_identity.mrsigner != qe_report.mr_signer {
+        return Err(Error::VerificationFailure("MRSigner value from Intel PCS's reported QE Identity is not equal to MRSigner value from Quote QE Report".to_owned()));
+    }
+
+    if qe_identity.enclave_identity.isvprodid != qe_report.isv_prod_id {
+        return Err(Error::VerificationFailure("isv_prod_id value from Intel PCS's reported QE Identity is not equal to isv_prod_id value from Quote QE Report".to_owned()));
+    }
+
+    for tcb_level in qe_identity.enclave_identity.tcb_levels {
+        if tcb_level.tcb.isvsvn < qe_report.isv_svn {
+            if tcb_level.tcb_status != TcbComponentStatus::UpToDate {
+                return Err(Error::VerificationFailure(
+                    "TCB status from Intel PCS's reported QE Identity is not up to date".to_owned(),
+                ));
+            }
+            break;
+        }
     }
 
     Ok(())
 }
 
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct TcbInfo {
-    version: u32,
-    id: String,
-    next_update: String,
-}
-
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct TcbInfoData {
-    tcb_info: TcbInfo,
-}
-
-pub(crate) fn verify_tcb_info(
-    pccs_url: &str,
-    root_ca_cert: &X509Certificate<'_>,
+fn verify_tcb_info(
+    tcb_info_issuer_chain: &[u8],
+    raw_tcb_info: &[u8],
+    tee_type: IntelTeeType,
+    root_ca_cert: &X509Certificate,
     sgx_pck_extension: &SgxPckExtension,
 ) -> Result<(), Error> {
-    let url_str = format!("{pccs_url}/sgx/certification/v4/tcb");
-    let params = [("fmspc", hex::encode(sgx_pck_extension.fmspc))];
-    let url = reqwest::Url::parse_with_params(&url_str, &params)
-        .map_err(|e| Error::InvalidFormat(e.to_string()))?;
-    let rsp = get(url)?;
-    let status = rsp.status();
-    let (headers, body) = (rsp.headers().clone(), rsp.text()?);
-
-    if !status.is_success() {
-        return Err(Error::ResponseAPIError(format!(
-            "Request to {url_str} returns a {status}: {body:?}",
-        )));
-    }
-
-    let tcb_info: TcbInfoData = serde_json::from_str(&body)
+    let tcb_info: TcbInfoData = serde_json::from_slice(raw_tcb_info)
         .map_err(|_| Error::InvalidFormat("TCBInfo is malformed".to_owned()))?;
 
-    let chain = get_certificate_chain_from_pem(
-        urlencoding::decode(
-            headers
-                .get("TCB-Info-Issuer-Chain")
-                .ok_or_else(|| {
-                    Error::InvalidFormat("'TCB-Info-Issuer-Chain' header not found".to_owned())
-                })?
-                .to_str()
-                .map_err(|_| {
-                    Error::InvalidFormat(
-                        "Can't find 'TCB-Info-Issuer-Chain' in response header".to_owned(),
-                    )
-                })?,
-        )
-        .map_err(|_| Error::InvalidFormat("Can't decode 'TCB-Info-Issuer-Chain'".to_owned()))?
-        .as_bytes(),
-    )?;
+    let tcb_info_raw: TcbInfoDataRaw = serde_json::from_slice(raw_tcb_info)
+        .map_err(|_| Error::InvalidFormat("TCBInfo is malformed (raw parsing)".to_owned()))?;
+
+    let chain = get_certificate_chain_from_pem(tcb_info_issuer_chain)?;
 
     if chain.len() != 2 {
         return Err(Error::InvalidFormat(
@@ -222,18 +403,31 @@ pub(crate) fn verify_tcb_info(
         )));
     }
 
-    if tcb_info.tcb_info.id != "SGX" {
+    if tcb_info.tcb_info.id != tee_type.as_str().to_uppercase() {
         return Err(Error::VerificationFailure(format!(
-            "TCB Id should be 'SGX' (gets: {})",
+            "TCB Id should be '{}' (gets: {})",
+            tee_type.as_str().to_uppercase(),
             tcb_info.tcb_info.id,
         )));
     }
 
-    if Utc::now()
-        > NaiveDateTime::parse_from_str(&tcb_info.tcb_info.next_update, "%Y-%m-%dT%H:%M:%SZ")
-            .map_err(|e| Error::InvalidFormat(format!("Invalid date format: {e:?}")))?
-            .and_utc()
-    {
+    if sgx_pck_extension.fmspc != tcb_info.tcb_info.fmspc {
+        return Err(Error::VerificationFailure(format!(
+            "TCB FMSPC should be '{}' (gets: {})",
+            hex::encode(tcb_info.tcb_info.fmspc),
+            hex::encode(sgx_pck_extension.fmspc),
+        )));
+    }
+
+    if sgx_pck_extension.pceid != tcb_info.tcb_info.pce_id {
+        return Err(Error::VerificationFailure(format!(
+            "TCB PCEID should be '{}' (gets: {})",
+            hex::encode(tcb_info.tcb_info.pce_id),
+            hex::encode(sgx_pck_extension.pceid),
+        )));
+    }
+
+    if !is_in_the_future(&tcb_info.tcb_info.next_update)? {
         return Err(Error::VerificationFailure(format!(
             "TCB update is in the past (gets: {})",
             tcb_info.tcb_info.next_update,
@@ -248,10 +442,17 @@ pub(crate) fn verify_tcb_info(
         ));
     }
 
+    let pubkey = VerifyingKey::from_public_key_der(tcb_cert.public_key().raw)?;
+    pubkey.verify(
+        &serde_json::to_vec(&tcb_info_raw.tcb_info)
+            .map_err(|err| Error::InvalidFormat(format!("Can't serialize TCBInfo: {err}")))?,
+        &Signature::from_slice(&tcb_info_raw.signature)?,
+    )?;
+
     Ok(())
 }
 
-pub(crate) fn get_certificate_chain_from_pem(data: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
+fn get_certificate_chain_from_pem(data: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
     let mut chain = Vec::new();
 
     for pem in Pem::iter_from_buffer(data) {
@@ -263,7 +464,7 @@ pub(crate) fn get_certificate_chain_from_pem(data: &[u8]) -> Result<Vec<Vec<u8>>
                     ));
                 }
 
-                chain.push(pem.contents.clone());
+                chain.push(pem.contents);
             }
 
             Err(e) => {
@@ -277,26 +478,9 @@ pub(crate) fn get_certificate_chain_from_pem(data: &[u8]) -> Result<Vec<Vec<u8>>
     Ok(chain)
 }
 
-pub(crate) fn verify_root_ca_crl(
-    pccs_url: &str,
-    root_ca: &X509Certificate<'_>,
-) -> Result<(), Error> {
-    let url = format!("{pccs_url}/sgx/certification/v4/rootcacrl");
-    let rsp = get(&url)?;
-    let status = rsp.status();
-    let body = rsp.bytes()?;
-
-    if !status.is_success() {
-        return Err(Error::ResponseAPIError(format!(
-            "Request to  {url} returns a {status}: {}",
-            String::from_utf8_lossy(&body),
-        )));
-    }
-
-    let body = hex::decode(body).map_err(|e| Error::InvalidFormat(e.to_string()))?;
-
-    let (res, crl) =
-        CertificateRevocationList::from_der(&body).map_err(|e| Error::X509ParserError(e.into()))?;
+fn verify_root_ca_crl(root_ca: &X509Certificate, root_ca_crl: &[u8]) -> Result<(), Error> {
+    let (res, crl) = CertificateRevocationList::from_der(root_ca_crl)
+        .map_err(|e| Error::X509ParserError(e.into()))?;
 
     if !res.is_empty() {
         return Err(Error::InvalidFormat(
@@ -319,19 +503,15 @@ pub(crate) fn verify_root_ca_crl(
     Ok(())
 }
 
-pub(crate) fn verify_pck_cert_crl(
-    pccs_url: &str,
-    root_ca_cert: &X509Certificate<'_>,
-    pck_ca_cert: &X509Certificate<'_>,
-) -> Result<(), Error> {
-    // Determine the value of the 'ca' parameter
-    let ca = match pck_ca_cert.subject.iter_common_name().next() {
+/// Determine the value of the 'ca' parameter
+fn get_pck_ca(pck_ca_cert: &X509Certificate) -> Result<PckCa, Error> {
+    match pck_ca_cert.subject.iter_common_name().next() {
         Some(attr) => {
             let value = attr.attr_value().as_str()?;
             if value == "Intel SGX PCK Platform CA" {
-                Ok("platform")
+                Ok(PckCa::Platform)
             } else if value == "Intel SGX PCK Processor CA" {
-                Ok("processor")
+                Ok(PckCa::Processor)
             } else {
                 Err(Error::InvalidFormat(
                     "Unknown CN in Intel SGX PCK Platform/Processor CA".to_string(),
@@ -341,26 +521,17 @@ pub(crate) fn verify_pck_cert_crl(
         None => Err(Error::InvalidFormat(
             "Common name not found in pck ca cert".to_string(),
         )),
-    }?;
-
-    // Get the CRL
-    let url_str = format!("{pccs_url}/sgx/certification/v4/pckcrl");
-    let params = [("ca", ca), ("encoding", "der")];
-    let url = reqwest::Url::parse_with_params(&url_str, &params)
-        .map_err(|e| Error::InvalidFormat(e.to_string()))?;
-    let rsp = get(url)?;
-    let status = rsp.status();
-    let (headers, body) = (rsp.headers().clone(), rsp.bytes()?);
-
-    if !status.is_success() {
-        return Err(Error::ResponseAPIError(format!(
-            "Request to  {url_str} returns a {status}: {}",
-            String::from_utf8_lossy(&body),
-        )));
     }
+}
 
-    let (res, crl) =
-        CertificateRevocationList::from_der(&body).map_err(|e| Error::X509ParserError(e.into()))?;
+fn verify_pck_cert_crl(
+    pck_crl_issuer_chain: &[u8],
+    pck_crl: &[u8],
+    root_ca_cert: &X509Certificate,
+    pck_ca_cert: &X509Certificate,
+) -> Result<(), Error> {
+    let (res, crl) = CertificateRevocationList::from_der(pck_crl)
+        .map_err(|e| Error::X509ParserError(e.into()))?;
 
     if !res.is_empty() {
         return Err(Error::InvalidFormat("PCK CRL parsing failed".to_owned()));
@@ -384,23 +555,7 @@ pub(crate) fn verify_pck_cert_crl(
     }
 
     // Verify the content of the sgx-pck-crl-issuer-chain header
-    let chain = get_certificate_chain_from_pem(
-        urlencoding::decode(
-            headers
-                .get("sgx-pck-crl-issuer-chain")
-                .ok_or_else(|| {
-                    Error::InvalidFormat("(sgx-pck-crl-issuer-chain() header not found".to_owned())
-                })?
-                .to_str()
-                .map_err(|_| {
-                    Error::InvalidFormat(
-                        "Can't find 'sgx-pck-crl-issuer-chain' in response header".to_owned(),
-                    )
-                })?,
-        )
-        .map_err(|_| Error::InvalidFormat("Can't decode 'sgx-pck-crl-issuer-chain'".to_owned()))?
-        .as_bytes(),
-    )?;
+    let chain = get_certificate_chain_from_pem(pck_crl_issuer_chain)?;
 
     if chain.len() != 2 {
         return Err(Error::InvalidFormat(
@@ -428,4 +583,100 @@ pub(crate) fn verify_pck_cert_crl(
     }
 
     Ok(())
+}
+
+fn verify_qe_identity(
+    qe_identity_issuer_chain: &[u8],
+    raw_qe_identity: &[u8],
+    root_ca_cert: &X509Certificate,
+) -> Result<(QeIdentity, Vec<String>), Error> {
+    debug!("Verifying QE Identity...");
+    let qe_identity: QeIdentity = serde_json::from_slice(raw_qe_identity)
+        .map_err(|e| Error::InvalidFormat(format!("QeIdentity is malformed: {e}")))?;
+
+    let chain = get_certificate_chain_from_pem(qe_identity_issuer_chain)?;
+
+    if chain.len() != 2 {
+        return Err(Error::InvalidFormat(
+            "'sgx-enclave-identity-issuer-chain' header should contain exactly 2 certificates"
+                .to_owned(),
+        ));
+    }
+
+    let (_, qe_identity_issuer_intermediate_cert) =
+        parse_x509_certificate(&chain[1]).map_err(|e| Error::X509ParserError(e.into()))?;
+
+    let (_, qe_identity_issuer_root_cert) =
+        parse_x509_certificate(&chain[0]).map_err(|e| Error::X509ParserError(e.into()))?;
+
+    qe_identity_issuer_intermediate_cert.verify_signature(Some(root_ca_cert.public_key()))?;
+
+    if !qe_identity_issuer_intermediate_cert.validity().is_valid() {
+        return Err(Error::VerificationFailure(
+            "Intel SGX TCB Signing has expired".to_owned(),
+        ));
+    }
+
+    if !qe_identity_issuer_root_cert.validity().is_valid() {
+        return Err(Error::VerificationFailure(
+            "Intel SGX Root CA has expired".to_owned(),
+        ));
+    }
+
+    if !is_in_the_future(&qe_identity.enclave_identity.next_update)? {
+        return Err(Error::VerificationFailure(format!(
+            "QE Identity update is in the past (gets: {})",
+            qe_identity.enclave_identity.next_update,
+        )));
+    }
+
+    let pubkey = VerifyingKey::from_public_key_der(qe_identity_issuer_root_cert.public_key().raw)?;
+    pubkey.verify(
+        &serde_json::to_vec(&qe_identity.enclave_identity)
+            .map_err(|err| Error::InvalidFormat(format!("Can't serialize QEIdentity: {err}")))?,
+        &Signature::from_slice(&qe_identity.signature)?,
+    )?;
+
+    let crl_distribution_points = qe_identity_issuer_root_cert
+        .extensions_map()?
+        .get(&CRL_DISTRIBUTION_POINTS_EXTENSION_OID)
+        .ok_or(Error::InvalidFormat(
+            "CRLDistributionPoints not found in qe_identity_issuer_root_cert".to_owned(),
+        ))?
+        .parsed_extension();
+
+    if let ParsedExtension::CRLDistributionPoints(distribution_points, ..) = crl_distribution_points
+    {
+        let mut crl_distribution_points = vec![];
+        for dp in distribution_points.iter() {
+            if let Some(point_name) = &dp.distribution_point {
+                match point_name {
+                    x509_parser::extensions::DistributionPointName::FullName(names) => {
+                        for name in names {
+                            if let GeneralName::URI(uri) = name {
+                                crl_distribution_points.push(uri.to_string())
+                            } else {
+                                return Err(Error::Unimplemented(format!("Name format ({name}) not supported for CRL distribution point")))
+                            }
+                        }
+                    }
+                    x509_parser::extensions::DistributionPointName::NameRelativeToCRLIssuer(_) => return Err(Error::Unimplemented("CRL distribution point name is relatived to crl issuer: not yet supported".to_owned())),
+                }
+            }
+        }
+
+        Ok((qe_identity, crl_distribution_points))
+    } else {
+        Err(Error::InvalidFormat(
+            "CRLDistributionPoints found by invalid format in qe_identity_issuer_root_cert"
+                .to_owned(),
+        ))
+    }
+}
+
+fn is_in_the_future(date: &str) -> Result<bool, Error> {
+    Ok(Utc::now()
+        <= NaiveDateTime::parse_from_str(date, "%Y-%m-%dT%H:%M:%SZ")
+            .map_err(|e| Error::InvalidFormat(format!("Invalid date format: {e:?}")))?
+            .and_utc())
 }

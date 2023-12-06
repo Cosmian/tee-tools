@@ -9,9 +9,9 @@ pub enum Error {
     #[error(transparent)]
     IOError(#[from] std::io::Error),
     #[error(transparent)]
-    ReadError(#[from] scroll::Error),
+    PccsClientError(#[from] pccs_client::error::Error),
     #[error(transparent)]
-    RequestAPIError(#[from] reqwest::Error),
+    ReadError(#[from] scroll::Error),
     #[error("{0}")]
     ResponseAPIError(String),
     #[error("{0}")]

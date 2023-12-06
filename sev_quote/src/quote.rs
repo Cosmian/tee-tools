@@ -401,7 +401,7 @@ pub(crate) fn get_certificate_chain_from_pem(data: &[u8]) -> Result<Vec<Vec<u8>>
                     ));
                 }
 
-                chain.push(pem.contents.clone());
+                chain.push(pem.contents);
             }
 
             Err(e) => {

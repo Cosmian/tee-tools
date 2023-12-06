@@ -1,12 +1,14 @@
 use crate::error::Error;
 use crate::mrsigner::compute_mr_signer;
-use crate::verify::{verify_pck_chain_and_tcb, verify_quote_signature};
+use crate::verify::{verify_collaterals, verify_quote_signature};
 
 use core::fmt;
 use log::debug;
 
+use pccs_client::IntelTeeType;
 use scroll::Pread;
 
+use crate::{REPORT_DATA_SIZE, SGX_GUEST_PATH};
 use std::{fs, io::Read};
 
 pub const QUOTE_HEADER_SIZE: usize = 48;
@@ -20,7 +22,6 @@ pub const QUOTE_QE_REPORT_SIZE: usize = 384;
 pub const MRENCLAVE_SIZE: usize = 32;
 pub const MRSIGNER_SIZE: usize = 32;
 
-const REPORT_DATA_SIZE: usize = 64;
 const QUOTE_MAX_SIZE: usize = 8192;
 
 const PCCS_URL: &str = "https://pccs.staging.mse.cosmian.com";
@@ -217,7 +218,7 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>, Error> {
     fs::write("/dev/attestation/user_report_data", user_report_data)?;
 
     debug!("Reading quote...");
-    let mut file = fs::File::open("/dev/attestation/quote")?;
+    let mut file = fs::File::open(SGX_GUEST_PATH)?;
     let mut buf = [0; QUOTE_MAX_SIZE];
     let size = file.read(&mut buf[..])?;
 
@@ -267,15 +268,26 @@ pub fn verify_quote(
     }
 
     // Verify pck chain and tcb
-    verify_pck_chain_and_tcb(
-        raw_quote,
+    verify_collaterals(
         &certs.certification_data,
+        &signature.qe_report,
+        raw_quote
+            .get(QUOTE_QE_REPORT_OFFSET..QUOTE_QE_REPORT_SIZE + QUOTE_QE_REPORT_OFFSET)
+            .ok_or_else(|| {
+                Error::InvalidFormat(
+                    "Bad offset extraction to check QE report signature".to_owned(),
+                )
+            })?,
         &signature.qe_report_signature,
+        &signature.qe_report.report_data,
+        &signature.attest_pub_key,
+        &auth_data.auth_data,
         PCCS_URL,
+        IntelTeeType::Sgx,
     )?;
 
-    debug!("Verifying quote signature");
-    verify_quote_signature(raw_quote, &auth_data, &signature)?;
+    // Verify the quote signature
+    verify_quote_signature(raw_quote, &signature)?;
 
     debug!("Verification succeed");
     Ok(())
@@ -306,10 +318,13 @@ pub fn parse_quote(
         .map_err(|e| Error::InvalidFormat(format!("Parse QE auth data length failed: {e:?}")))?;
     let mut qe_auth_data: Vec<u8> = vec![0; qe_auth_data_len as usize];
     raw_quote.gread_inout(offset, &mut qe_auth_data)?;
-    assert!(
-        qe_auth_data.len() == qe_auth_data_len as usize,
-        "unexpected qe_auth_data_len"
-    );
+
+    if qe_auth_data.len() != qe_auth_data_len as usize {
+        return Err(Error::InvalidFormat(
+            "Unexpected qe_auth_data_len".to_owned(),
+        ));
+    }
+
     let qe_auth_data = AuthData {
         auth_data: qe_auth_data,
     };
@@ -319,6 +334,7 @@ pub fn parse_quote(
         .map_err(|e| {
             Error::InvalidFormat(format!("Parse certification data type failed: {e:?}"))
         })?;
+
     debug!("certification_data_type: {}", certification_data_type);
 
     let certification_data_len = raw_quote
@@ -326,22 +342,27 @@ pub fn parse_quote(
         .map_err(|e| {
             Error::InvalidFormat(format!("Parse certification data length failed: {e:?}"))
         })?;
+
     let mut certification_data: Vec<u8> = vec![0; certification_data_len as usize];
     raw_quote.gread_inout(offset, &mut certification_data)?;
-    assert!(
-        certification_data.len() == certification_data_len as usize,
-        "unexpected certification_data_len"
-    );
+    if certification_data.len() != certification_data_len as usize {
+        return Err(Error::InvalidFormat(
+            "Unexpected certification_data_len".to_owned(),
+        ));
+    }
+
     let certification_data = CertificationData {
         cert_key_type: certification_data_type,
         certification_data,
     };
 
-    assert!(
-        *offset - QUOTE_REPORT_BODY_SIZE - QUOTE_HEADER_SIZE - 4 == signature_data_len as usize,
-        "bad signature length!"
-    );
-    assert!(raw_quote.len() == *offset, "failed to parse quote!");
+    if *offset - QUOTE_REPORT_BODY_SIZE - QUOTE_HEADER_SIZE - 4 != signature_data_len as usize {
+        return Err(Error::InvalidFormat("Bad signature length!".to_owned()));
+    }
+
+    if raw_quote.len() != *offset {
+        return Err(Error::InvalidFormat("Failed to parse quote!".to_owned()));
+    }
 
     Ok((
         Quote {

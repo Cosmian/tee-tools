@@ -1,8 +1,6 @@
-# SGX DCAP RATLS 
+# TEE TOOLS
 
-TODO: rename the project
-
-It contains severals libraries to handle the SGX and SEV quote, the quote verification and the ratls certificate.
+It contains severals libraries to handle the Intel SGX/TDX and AMD SEV quote: generation, parsing and verification. 
 
 It also contains `ratls_certtool` to:
 - Generate a RATLS certificate 

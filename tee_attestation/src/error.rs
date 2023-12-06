@@ -8,6 +8,8 @@ pub enum Error {
     SEVQuoteError(#[from] sev_quote::error::Error),
     #[error(transparent)]
     SGXQuoteError(#[from] sgx_quote::error::Error),
+    #[error(transparent)]
+    TDXQuoteError(#[from] tdx_quote::error::Error),
     #[error("Unsupported TEE type")]
     UnsupportedTeeError,
     #[error("VerificationFailure: {0}")]
