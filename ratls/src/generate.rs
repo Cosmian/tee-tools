@@ -70,7 +70,6 @@ pub fn get_ratls_extension(
     let quote = get_quote(&user_report_data)?;
 
     match guess_tee()? {
-        /* TODO: remove that after sgx::get_quote refactor */
         TeeType::Sev => Ok(RatlsExtension::AMDSevTee(AMDSevRatlsExtension::from(
             OctetString::new(quote).map_err(|_| Error::UnsupportedTeeError)?,
         ))),

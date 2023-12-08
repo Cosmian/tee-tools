@@ -1,8 +1,20 @@
 use error::Error;
-use sev_quote::quote::SEVQuote;
-use sgx_quote::quote::Quote as SGXQuote;
-use tdx_quote::policy::TdxQuoteVerificationPolicy;
-use tdx_quote::quote::Quote as TDXQuote;
+// Reexport sev policies
+pub use sev_quote::policy::SevQuoteVerificationPolicy;
+use sev_quote::quote::Quote as SevQuote;
+// Reexport sgx policies
+pub use sgx_quote::policy::{
+    SgxQuoteBodyVerificationPolicy, SgxQuoteHeaderVerificationPolicy, SgxQuoteVerificationPolicy,
+};
+use sgx_quote::quote::Quote as SgxQuote;
+use sha2::{Digest, Sha256};
+// Reexport tdx policies
+pub use tdx_quote::policy::{
+    TdxQuoteBodyVerificationPolicy, TdxQuoteHeaderVerificationPolicy, TdxQuoteVerificationPolicy,
+};
+use tdx_quote::quote::Quote as TdxQuote;
+
+use serde::{Deserialize, Serialize};
 
 pub mod error;
 
@@ -13,25 +25,70 @@ pub enum TeeType {
 }
 
 pub enum TeeQuote {
-    Sev(Box<SEVQuote>),
-    Sgx(Box<SGXQuote>),
-    Tdx(Box<TDXQuote>),
+    Sev(Box<SevQuote>),
+    Sgx(Box<SgxQuote>),
+    Tdx(Box<TdxQuote>),
 }
 
-#[derive(Debug)]
-pub struct SgxMeasurement {
-    pub public_signer_key_pem: String,
-    pub mr_enclave: [u8; 32],
-}
-
-#[derive(Debug)]
-pub struct SevMeasurement(pub [u8; 48]);
-
-#[derive(Default, Debug)]
-pub struct TeeMeasurement {
-    pub sgx: Option<SgxMeasurement>,
-    pub sev: Option<SevMeasurement>,
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Copy)]
+pub struct TeePolicy {
+    pub sgx: Option<SgxQuoteVerificationPolicy>,
+    pub sev: Option<SevQuoteVerificationPolicy>,
     pub tdx: Option<TdxQuoteVerificationPolicy>,
+}
+
+impl TeePolicy {
+    pub fn set_report_data(&mut self, report_data: &[u8]) -> Result<(), Error> {
+        if let Some(sgx) = &mut self.sgx {
+            sgx.set_report_data(
+                pad_report_data(report_data, sgx_quote::REPORT_DATA_SIZE)?
+                    .try_into()
+                    .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
+            )
+        }
+
+        if let Some(tdx) = &mut self.tdx {
+            tdx.set_report_data(
+                pad_report_data(report_data, tdx_quote::REPORT_DATA_SIZE)?
+                    .try_into()
+                    .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
+            )
+        }
+
+        if let Some(sev) = &mut self.sev {
+            sev.set_report_data(
+                pad_report_data(report_data, sev_quote::REPORT_DATA_SIZE)?
+                    .try_into()
+                    .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
+            )
+        }
+
+        Ok(())
+    }
+}
+
+/// Build a TeePolicy from a given raw tee quote
+impl TryFrom<&[u8]> for TeePolicy {
+    type Error = Error;
+
+    fn try_from(quote: &[u8]) -> Result<Self, Error> {
+        let quote = parse_quote(quote)?;
+
+        Ok(match quote {
+            TeeQuote::Sev(quote) => TeePolicy {
+                sev: Some(SevQuoteVerificationPolicy::from(quote.as_ref())),
+                ..Default::default()
+            },
+            TeeQuote::Sgx(quote) => TeePolicy {
+                sgx: Some(SgxQuoteVerificationPolicy::from(quote.as_ref())),
+                ..Default::default()
+            },
+            TeeQuote::Tdx(quote) => TeePolicy {
+                tdx: Some(TdxQuoteVerificationPolicy::from(quote.as_ref())),
+                ..Default::default()
+            },
+        })
+    }
 }
 
 /// Tell whether the platform is an SGX or an SEV processor
@@ -58,7 +115,7 @@ pub fn is_running_inside_tee() -> bool {
 
 /// Parse a quote
 pub fn parse_quote(raw_quote: &[u8]) -> Result<TeeQuote, Error> {
-    if let Ok(quote) = bincode::deserialize(raw_quote) {
+    if let Ok(quote) = sev_quote::quote::parse_quote(raw_quote) {
         return Ok(TeeQuote::Sev(Box::new(quote)));
     }
 
@@ -73,81 +130,85 @@ pub fn parse_quote(raw_quote: &[u8]) -> Result<TeeQuote, Error> {
     Err(Error::UnsupportedTeeError)
 }
 
-// Generate a quote for the current tee
+/// Forge a report data by using a 32-bytes nonce and a sha256(data)
+pub fn forge_report_data_with_nonce(nonce: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, Error> {
+    // user_report_data = ( sha256(data) || 32bytes_nonce )
+    let mut user_report_data = nonce.to_vec();
+
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    user_report_data.extend(hasher.finalize());
+
+    Ok(user_report_data)
+}
+
+/// Generate a quote for the current tee
 #[cfg(target_os = "linux")]
 pub fn get_quote(report_data: &[u8]) -> Result<Vec<u8>, Error> {
     match guess_tee()? {
-        TeeType::Sev => {
-            let quote = sev_quote::quote::get_quote(report_data)?;
-            bincode::serialize(&quote)
-                .map_err(|_| Error::InvalidFormat("Can't serialize the SEV quote".to_owned()))
-        }
-        TeeType::Sgx => Ok(sgx_quote::quote::get_quote(report_data)?),
-        TeeType::Tdx => Ok(tdx_quote::quote::get_quote(report_data)?),
+        TeeType::Sev => Ok(sev_quote::quote::get_quote(
+            &pad_report_data(report_data, sev_quote::REPORT_DATA_SIZE)?
+                .try_into()
+                .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
+        )?),
+        TeeType::Sgx => Ok(sgx_quote::quote::get_quote(
+            &pad_report_data(report_data, sgx_quote::REPORT_DATA_SIZE)?
+                .try_into()
+                .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
+        )?),
+        TeeType::Tdx => Ok(tdx_quote::quote::get_quote(
+            &pad_report_data(report_data, tdx_quote::REPORT_DATA_SIZE)?
+                .try_into()
+                .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
+        )?),
     }
 }
 
+fn pad_report_data(report_data: &[u8], length: usize) -> Result<Vec<u8>, Error> {
+    if report_data.len() > length {
+        return Err(Error::InvalidFormat(format!(
+            "user_report_data must be at most {length} bytes"
+        )));
+    }
+
+    let mut inner_user_report_data = vec![0u8; length];
+    inner_user_report_data[0..report_data.len()].copy_from_slice(report_data);
+    Ok(inner_user_report_data)
+}
+
 /// Verify a quote
-pub fn verify_quote(
-    raw_quote: &[u8],
-    expected_report_data: &[u8],
-    measurement: TeeMeasurement,
-) -> Result<(), Error> {
+pub fn verify_quote(raw_quote: &[u8], policy: &TeePolicy) -> Result<(), Error> {
     let quote = parse_quote(raw_quote)?;
-    let report_data_length = expected_report_data.len();
 
     match quote {
         TeeQuote::Sev(quote) => {
-            if &quote.report.report_data[..report_data_length] != expected_report_data {
-                return Err(Error::VerificationFailure(
-                    "Failed to verify the quote report data".to_owned(),
-                ));
-            }
-
-            let measurement = if let Some(SevMeasurement(m)) = measurement.sev {
-                Some(m)
-            } else {
-                None
-            };
-
             // Verify the quote itself
             Ok(sev_quote::quote::verify_quote(
-                &quote.report,
-                &quote.certs,
-                measurement,
+                &quote,
+                &policy
+                    .sev
+                    .as_ref()
+                    .map_or_else(SevQuoteVerificationPolicy::default, |p| *p),
             )?)
         }
-        TeeQuote::Sgx(quote) => {
-            if &quote.report_body.report_data[..report_data_length] != expected_report_data {
-                return Err(Error::VerificationFailure(
-                    "Failed to verify the quote report data".to_owned(),
-                ));
-            }
-
-            let (mr_enclave, public_signer_key_pem) = if let Some(SgxMeasurement {
-                public_signer_key_pem: s,
-                mr_enclave: e,
-            }) = measurement.sgx
-            {
-                (Some(e), Some(s))
-            } else {
-                (None, None)
-            };
-
+        TeeQuote::Sgx(_) => {
             // Verify the quote itself
             Ok(sgx_quote::quote::verify_quote(
                 raw_quote,
-                mr_enclave,
-                public_signer_key_pem.as_deref(),
+                &policy
+                    .sgx
+                    .as_ref()
+                    .map_or_else(SgxQuoteVerificationPolicy::default, |p| *p),
             )?)
         }
         TeeQuote::Tdx(_) => {
             // Verify the quote itself
             Ok(tdx_quote::quote::verify_quote(
                 raw_quote,
-                &measurement
+                &policy
                     .tdx
-                    .map_or_else(TdxQuoteVerificationPolicy::default, |m| m),
+                    .as_ref()
+                    .map_or_else(TdxQuoteVerificationPolicy::default, |p| *p),
             )?)
         }
     }

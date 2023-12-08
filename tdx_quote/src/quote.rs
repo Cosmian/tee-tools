@@ -347,19 +347,9 @@ pub fn parse_quote(raw_quote: &[u8]) -> Result<(Quote, EcdsaSigData), Error> {
 
 #[cfg(target_os = "linux")]
 /// Get the quote from the block device
-pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>, Error> {
+pub fn get_quote(user_report_data: &[u8; REPORT_DATA_SIZE]) -> Result<Vec<u8>, Error> {
     use crate::generate::_get_quote;
-
-    if user_report_data.len() > REPORT_DATA_SIZE {
-        return Err(Error::InvalidFormat(
-            "user_report_data must be at most 64 bytes".to_owned(),
-        ));
-    }
-
-    let mut inner_user_report_data = [0u8; REPORT_DATA_SIZE];
-    inner_user_report_data[0..user_report_data.len()].copy_from_slice(user_report_data);
-
-    _get_quote(&inner_user_report_data)
+    _get_quote(user_report_data)
 }
 
 /// Verify the quote
@@ -429,7 +419,10 @@ mod tests {
     #[test]
     fn test_tdx_get_quote() {
         if is_tdx() {
-            assert!(get_quote(b"0123456789abcdef012345678789abcdef0123456789abcdef").is_ok());
+            assert!(
+                get_quote(b"0123456789abcdef012345678789abcdef0123456789abcdef00000000000000")
+                    .is_ok()
+            );
         }
     }
 

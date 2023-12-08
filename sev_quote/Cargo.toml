@@ -18,7 +18,8 @@ hkdf = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
-sev = { git = "https://github.com/virtee/sev", rev = "a6d6568c96a7a5d6c55d10228a54cda5f3c32e44", features = [
+serde-hex = { workspace = true }
+sev = { git = "https://github.com/Cosmian/sev", features = [ # TODO: update after merging in virtee/sev
     "snp",
     "openssl",
     "sev",

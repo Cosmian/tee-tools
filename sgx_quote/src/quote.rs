@@ -1,6 +1,9 @@
 use crate::error::Error;
-use crate::mrsigner::compute_mr_signer;
-use crate::verify::{verify_collaterals, verify_quote_signature};
+use crate::policy::SgxQuoteVerificationPolicy;
+use crate::verify::{
+    verify_collaterals, verify_quote_body_policy, verify_quote_header_policy,
+    verify_quote_signature,
+};
 
 use core::fmt;
 use log::debug;
@@ -18,9 +21,6 @@ pub const QUOTE_ECDSA_SIG_DATA_SIZE: usize = 576;
 pub const QUOTE_AUTH_DATA_OFFSET: usize = QUOTE_BODY_SIZE + 4;
 pub const QUOTE_QE_REPORT_OFFSET: usize = QUOTE_AUTH_DATA_OFFSET + 128;
 pub const QUOTE_QE_REPORT_SIZE: usize = 384;
-
-pub const MRENCLAVE_SIZE: usize = 32;
-pub const MRSIGNER_SIZE: usize = 32;
 
 const QUOTE_MAX_SIZE: usize = 8192;
 
@@ -195,13 +195,7 @@ pub struct EcdsaSigData {
 }
 
 /// Get the quote of the SGX enclave
-pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>, Error> {
-    if user_report_data.len() > REPORT_DATA_SIZE {
-        return Err(Error::InvalidFormat(
-            "user_report_data must be at most 64 bytes".to_owned(),
-        ));
-    }
-
+pub fn get_quote(user_report_data: &[u8; REPORT_DATA_SIZE]) -> Result<Vec<u8>, Error> {
     debug!("Reading attestation_type...");
     let mut file = fs::File::open("/dev/attestation/attestation_type")?;
     let mut buf = [0; 32];
@@ -231,43 +225,13 @@ pub fn get_quote(user_report_data: &[u8]) -> Result<Vec<u8>, Error> {
 /// - The MRenclave
 /// - The MRsigner
 /// - The quote collaterals
-pub fn verify_quote(
-    raw_quote: &[u8],
-    mr_enclave: Option<[u8; MRENCLAVE_SIZE]>,
-    public_signer_key_pem: Option<&str>,
-) -> Result<(), Error> {
+pub fn verify_quote(raw_quote: &[u8], policy: &SgxQuoteVerificationPolicy) -> Result<(), Error> {
     let (quote, signature, auth_data, certs) = parse_quote(raw_quote)?;
 
-    // Check the MRENCLAVE
-    debug!("Checking MRENCLAVE");
-    if let Some(mr_enclave) = mr_enclave {
-        if quote.report_body.mr_enclave != mr_enclave {
-            return Err(Error::VerificationFailure(format!(
-                "MRENCLAVE miss-matches expected value ({})",
-                hex::encode(quote.report_body.mr_enclave),
-            )));
-        }
-    }
+    verify_quote_header_policy(&quote.header, &policy.header)?;
 
-    // Check the MRSIGNER
-    debug!("Checking MRSIGNER");
-    if let Some(public_signer_key_pem) = &public_signer_key_pem {
-        let mr_signer: [u8; MRSIGNER_SIZE] = compute_mr_signer(public_signer_key_pem)?
-            .as_slice()
-            .try_into()
-            .map_err(|e| {
-                Error::InvalidFormat(format!("MRSIGNER does not have the expected size: {e}"))
-            })?;
+    verify_quote_body_policy(&quote.report_body, &policy.body)?;
 
-        if quote.report_body.mr_signer != mr_signer {
-            return Err(Error::VerificationFailure(format!(
-                "MRSIGNER miss-matches expected value ({})",
-                hex::encode(quote.report_body.mr_signer),
-            )));
-        }
-    }
-
-    // Verify pck chain and tcb
     verify_collaterals(
         &certs.certification_data,
         &signature.qe_report,
@@ -286,7 +250,6 @@ pub fn verify_quote(
         IntelTeeType::Sgx,
     )?;
 
-    // Verify the quote signature
     verify_quote_signature(raw_quote, &signature)?;
 
     debug!("Verification succeed");
@@ -377,6 +340,11 @@ pub fn parse_quote(
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        mrsigner::compute_mr_signer,
+        policy::{SgxQuoteBodyVerificationPolicy, SgxQuoteHeaderVerificationPolicy},
+    };
+
     use super::*;
     use env_logger::Target;
 
@@ -388,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_quote() {
+    fn test_sgx_parse_quote() {
         init();
         let raw_quote = include_bytes!("../data/quote.dat");
         let (_quote, _ecdsa_sig_data, _auth_data, _certification_data) =
@@ -396,7 +364,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_quote() {
+    fn test_sgx_verify_quote() {
         init();
         let raw_quote = include_bytes!("../data/quote.dat");
 
@@ -405,8 +373,19 @@ mod tests {
                 .unwrap()
                 .try_into()
                 .unwrap();
-        let public_signer_key: &str = include_str!("../data/signer-key.pem");
+        let mr_signer = compute_mr_signer(include_str!("../data/signer-key.pem")).unwrap();
 
-        assert!(verify_quote(raw_quote, Some(mrenclave), Some(public_signer_key)).is_ok());
+        assert!(verify_quote(
+            raw_quote,
+            &SgxQuoteVerificationPolicy {
+                header: SgxQuoteHeaderVerificationPolicy::default(),
+                body: SgxQuoteBodyVerificationPolicy {
+                    mr_enclave: Some(mrenclave),
+                    mr_signer: Some(mr_signer),
+                    ..Default::default()
+                }
+            }
+        )
+        .is_ok());
     }
 }

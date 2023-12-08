@@ -5,7 +5,10 @@ use openssl::{
     bn::BigNumContext,
     ec::{EcGroup, EcKey, PointConversionForm},
 };
-use sev_quote::quote::{verify_quote, SEVQuote};
+use sev_quote::{
+    policy::SevQuoteVerificationPolicy,
+    quote::{parse_quote, verify_quote},
+};
 use std::{fs, path::PathBuf};
 
 use crate::common::{
@@ -50,8 +53,14 @@ impl EncryptArgs {
             None
         };
 
-        let quote: SEVQuote = bincode::deserialize(&fs::read(&self.quote)?)?;
-        verify_quote(&quote.report, &quote.certs, sev_measurement)?;
+        let quote = parse_quote(&fs::read(&self.quote)?)?;
+        verify_quote(
+            &quote,
+            &SevQuoteVerificationPolicy {
+                measurement: sev_measurement,
+                ..Default::default()
+            },
+        )?;
 
         if quote.report.report_data[0..QUOTE_FINGERPRINT_SIZE]
             != sha256(&peer_public_key.public_key_to_der()?)

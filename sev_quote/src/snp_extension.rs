@@ -7,6 +7,7 @@ pub enum SnpOid {
     BootLoader,
     Tee,
     Snp,
+    #[allow(dead_code)]
     Ucode,
     HwId,
 }

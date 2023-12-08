@@ -18,6 +18,8 @@ pub enum Error {
     SevError(#[from] sev::error::UserApiError),
     #[error("{0}")]
     Unimplemented(String),
+    #[error("URLError: {0}")]
+    URLError(String),
     #[error("{0}")]
     VerificationFailure(String),
     #[error(transparent)]

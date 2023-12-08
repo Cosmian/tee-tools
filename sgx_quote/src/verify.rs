@@ -1,5 +1,6 @@
 use crate::error::Error;
-use crate::quote::{EcdsaSigData, ReportBody, QUOTE_BODY_SIZE};
+use crate::policy::{SgxQuoteBodyVerificationPolicy, SgxQuoteHeaderVerificationPolicy};
+use crate::quote::{EcdsaSigData, QuoteHeader, ReportBody, QUOTE_BODY_SIZE};
 
 use chrono::{NaiveDateTime, Utc};
 
@@ -679,4 +680,97 @@ fn is_in_the_future(date: &str) -> Result<bool, Error> {
         <= NaiveDateTime::parse_from_str(date, "%Y-%m-%dT%H:%M:%SZ")
             .map_err(|e| Error::InvalidFormat(format!("Invalid date format: {e:?}")))?
             .and_utc())
+}
+
+/// Verify the quote header against expected values
+pub(crate) fn verify_quote_header_policy(
+    header: &QuoteHeader,
+    policy: &SgxQuoteHeaderVerificationPolicy,
+) -> Result<(), Error> {
+    debug!("Verifiying quote header against the policy...");
+
+    if header.version != 3 {
+        return Err(Error::VerificationFailure(format!(
+            "Quote version '{}' is not supported",
+            header.version
+        )));
+    }
+
+    if header.att_key_type != 2 {
+        // ECDSA-256-with-P-256 curve
+        return Err(Error::VerificationFailure(format!(
+            "Attestation key type '{}' is not supported",
+            header.att_key_type
+        )));
+    }
+
+    if let Some(minimum_qe_svn) = policy.minimum_qe_svn {
+        if header.qe_svn < minimum_qe_svn {
+            return Err(Error::VerificationFailure(format!(
+                "Attestation QE security-version number '{}' is lower than the set value '{}'",
+                header.qe_svn, minimum_qe_svn
+            )));
+        }
+    }
+
+    if let Some(minimum_pce_svn) = policy.minimum_pce_svn {
+        if header.pce_svn < minimum_pce_svn {
+            return Err(Error::VerificationFailure(format!(
+                "Attestation PCE security-version number '{}' is lower than the set value '{}'",
+                header.pce_svn, minimum_pce_svn
+            )));
+        }
+    }
+
+    if let Some(vendor_id) = policy.qe_vendor_id {
+        if header.vendor_id != vendor_id {
+            return Err(Error::VerificationFailure(format!(
+                "Attestation QE Vendor ID '{}' is not equal to the set value '{}'",
+                hex::encode(header.vendor_id),
+                hex::encode(vendor_id)
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Verify the quote body against expected values
+pub(crate) fn verify_quote_body_policy(
+    body: &ReportBody,
+    policy: &SgxQuoteBodyVerificationPolicy,
+) -> Result<(), Error> {
+    debug!("Verifiying quote body against the policy...");
+
+    // Check the MRENCLAVE
+    if let Some(mr_enclave) = policy.mr_enclave {
+        if body.mr_enclave != mr_enclave {
+            return Err(Error::VerificationFailure(format!(
+                "MRENCLAVE miss-matches expected value ({})",
+                hex::encode(body.mr_enclave),
+            )));
+        }
+    }
+
+    // Check the MRSIGNER
+    if let Some(mr_signer) = policy.mr_signer {
+        if body.mr_signer != mr_signer {
+            return Err(Error::VerificationFailure(format!(
+                "MRSIGNER miss-matches expected value ({})",
+                hex::encode(body.mr_signer),
+            )));
+        }
+    }
+
+    if let Some(report_data) = &policy.report_data {
+        if &body.report_data != report_data {
+            return Err(Error::VerificationFailure(format!(
+                "Attestation report data '{}' is not equal to the set value '{}'",
+                hex::encode(body.report_data),
+                hex::encode(report_data)
+            )));
+        }
+    }
+
+    Ok(())
 }
