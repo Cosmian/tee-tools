@@ -50,7 +50,7 @@ pub fn forge_report_data(
 /// - The MRsigner
 /// - The report data content
 /// - The quote collaterals
-pub fn verify_ratls(pem_ratls_cert: &[u8], policy: &mut TeePolicy) -> Result<(), Error> {
+pub fn verify_ratls(pem_ratls_cert: &[u8], policy: Option<&mut TeePolicy>) -> Result<(), Error> {
     let (rem, pem) = parse_x509_pem(pem_ratls_cert)?;
 
     if !rem.is_empty() || &pem.label != "CERTIFICATE" {
@@ -66,10 +66,17 @@ pub fn verify_ratls(pem_ratls_cert: &[u8], policy: &mut TeePolicy) -> Result<(),
 
     // Get the quote from the certificate
     let raw_quote = extract_quote(&ratls_cert)?;
-    let expected_report_data = forge_report_data(&pk, None)?;
-    policy.set_report_data(&expected_report_data)?;
 
-    Ok(verify_quote(&raw_quote, policy)?)
+    let policy = if let Some(policy) = policy {
+        let expected_report_data = forge_report_data(&pk, None)?;
+        //  let mut policy = policy.clone();
+        policy.set_report_data(&expected_report_data)?;
+        Some(policy)
+    } else {
+        None
+    };
+
+    Ok(verify_quote(&raw_quote, policy.as_deref())?)
 }
 
 /// Extract the quote from an RATLS certificate
@@ -204,11 +211,9 @@ mod tests {
 
         assert!(verify_ratls(
             cert,
-            &mut TeePolicy {
-                sev: None,
-                sgx: Some(SgxQuoteVerificationPolicy::new(mrenclave, public_signer_key).unwrap()),
-                tdx: None
-            }
+            Some(&mut TeePolicy::Sgx(
+                SgxQuoteVerificationPolicy::new(mrenclave, public_signer_key).unwrap()
+            ))
         )
         .is_ok());
     }
@@ -223,11 +228,9 @@ mod tests {
 
         assert!(verify_ratls(
             cert,
-            &mut TeePolicy {
-                sev: Some(SevQuoteVerificationPolicy::new(measurement)),
-                sgx: None,
-                tdx: None
-            }
+            Some(&mut TeePolicy::Sev(SevQuoteVerificationPolicy::new(
+                measurement
+            )))
         )
         .is_ok());
     }
@@ -238,11 +241,7 @@ mod tests {
 
         assert!(verify_ratls(
             cert,
-            &mut TeePolicy {
-                sev: None,
-                sgx: None,
-                tdx: Some(TdxQuoteVerificationPolicy::new()),
-            }
+            Some(&mut TeePolicy::Tdx(TdxQuoteVerificationPolicy::new()))
         )
         .is_ok());
     }

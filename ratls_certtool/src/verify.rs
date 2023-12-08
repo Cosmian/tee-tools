@@ -48,25 +48,13 @@ impl VerifyArgs {
         };
 
         let mut policy = match (public_signer_key, mrenclave, sev_measurement) {
-            (None, None, None) => TeePolicy {
-                sgx: None,
-                sev: None,
-                tdx: None
-            },
-            (Some(s), Some(e), None) => TeePolicy {
-                sgx: Some(SgxQuoteVerificationPolicy::new(e, s.deref())?) ,
-                sev: None,
-                tdx: None
-            },
-            (None, None, Some(m)) => TeePolicy {
-                sgx: None,
-                sev: Some(SevQuoteVerificationPolicy::new(m)),
-                tdx: None,
-            },
+            (None, None, None) => None,
+            (Some(s), Some(e), None) => Some(TeePolicy::Sgx(SgxQuoteVerificationPolicy::new(e, s.deref())?)),
+            (None, None, Some(m)) => Some(TeePolicy::Sev(SevQuoteVerificationPolicy::new(m))),
             _ => anyhow::bail!("Bad measurements combination. It should be [None | (--mrenclave & --signer_key) | measurement]")
         };
 
-        verify_ratls(fs::read_to_string(&self.cert)?.as_bytes(), &mut policy)?;
+        verify_ratls(fs::read_to_string(&self.cert)?.as_bytes(), policy.as_mut())?;
 
         println!("Verification succeed!");
 

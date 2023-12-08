@@ -24,44 +24,39 @@ pub enum TeeType {
     Tdx,
 }
 
+#[derive(Debug)]
 pub enum TeeQuote {
     Sev(Box<SevQuote>),
     Sgx(Box<SgxQuote>),
     Tdx(Box<TdxQuote>),
 }
 
-#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Copy)]
-pub struct TeePolicy {
-    pub sgx: Option<SgxQuoteVerificationPolicy>,
-    pub sev: Option<SevQuoteVerificationPolicy>,
-    pub tdx: Option<TdxQuoteVerificationPolicy>,
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub enum TeePolicy {
+    Sgx(SgxQuoteVerificationPolicy),
+    Sev(SevQuoteVerificationPolicy),
+    Tdx(TdxQuoteVerificationPolicy),
 }
 
 impl TeePolicy {
     pub fn set_report_data(&mut self, report_data: &[u8]) -> Result<(), Error> {
-        if let Some(sgx) = &mut self.sgx {
-            sgx.set_report_data(
+        match self {
+            TeePolicy::Sgx(sgx) => sgx.set_report_data(
                 pad_report_data(report_data, sgx_quote::REPORT_DATA_SIZE)?
                     .try_into()
                     .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
-            )
-        }
-
-        if let Some(tdx) = &mut self.tdx {
-            tdx.set_report_data(
+            ),
+            TeePolicy::Tdx(tdx) => tdx.set_report_data(
                 pad_report_data(report_data, tdx_quote::REPORT_DATA_SIZE)?
                     .try_into()
                     .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
-            )
-        }
-
-        if let Some(sev) = &mut self.sev {
-            sev.set_report_data(
+            ),
+            TeePolicy::Sev(sev) => sev.set_report_data(
                 pad_report_data(report_data, sev_quote::REPORT_DATA_SIZE)?
                     .try_into()
                     .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
-            )
-        }
+            ),
+        };
 
         Ok(())
     }
@@ -75,18 +70,17 @@ impl TryFrom<&[u8]> for TeePolicy {
         let quote = parse_quote(quote)?;
 
         Ok(match quote {
-            TeeQuote::Sev(quote) => TeePolicy {
-                sev: Some(SevQuoteVerificationPolicy::from(quote.as_ref())),
-                ..Default::default()
-            },
-            TeeQuote::Sgx(quote) => TeePolicy {
-                sgx: Some(SgxQuoteVerificationPolicy::from(quote.as_ref())),
-                ..Default::default()
-            },
-            TeeQuote::Tdx(quote) => TeePolicy {
-                tdx: Some(TdxQuoteVerificationPolicy::from(quote.as_ref())),
-                ..Default::default()
-            },
+            TeeQuote::Sev(quote) => {
+                TeePolicy::Sev(SevQuoteVerificationPolicy::from(quote.as_ref()))
+            }
+
+            TeeQuote::Sgx(quote) => {
+                TeePolicy::Sgx(SgxQuoteVerificationPolicy::from(quote.as_ref()))
+            }
+
+            TeeQuote::Tdx(quote) => {
+                TeePolicy::Tdx(TdxQuoteVerificationPolicy::from(quote.as_ref()))
+            }
         })
     }
 }
@@ -177,40 +171,47 @@ fn pad_report_data(report_data: &[u8], length: usize) -> Result<Vec<u8>, Error> 
 }
 
 /// Verify a quote
-pub fn verify_quote(raw_quote: &[u8], policy: &TeePolicy) -> Result<(), Error> {
+pub fn verify_quote(raw_quote: &[u8], policy: Option<&TeePolicy>) -> Result<(), Error> {
     let quote = parse_quote(raw_quote)?;
 
-    match quote {
-        TeeQuote::Sev(quote) => {
+    match (&quote, policy) {
+        (TeeQuote::Sev(quote), None) => {
             // Verify the quote itself
             Ok(sev_quote::quote::verify_quote(
-                &quote,
-                &policy
-                    .sev
-                    .as_ref()
-                    .map_or_else(SevQuoteVerificationPolicy::default, |p| *p),
+                quote,
+                &SevQuoteVerificationPolicy::default(),
             )?)
         }
-        TeeQuote::Sgx(_) => {
+        (TeeQuote::Sev(quote), Some(TeePolicy::Sev(p))) => {
+            // Verify the quote itself
+            Ok(sev_quote::quote::verify_quote(quote, p)?)
+        }
+        (TeeQuote::Sgx(_), None) => {
             // Verify the quote itself
             Ok(sgx_quote::quote::verify_quote(
                 raw_quote,
-                &policy
-                    .sgx
-                    .as_ref()
-                    .map_or_else(SgxQuoteVerificationPolicy::default, |p| *p),
+                &SgxQuoteVerificationPolicy::default(),
             )?)
         }
-        TeeQuote::Tdx(_) => {
+        (TeeQuote::Sgx(_), Some(TeePolicy::Sgx(p))) => {
+            // Verify the quote itself
+            Ok(sgx_quote::quote::verify_quote(raw_quote, p)?)
+        }
+        (TeeQuote::Tdx(_), None) => {
             // Verify the quote itself
             Ok(tdx_quote::quote::verify_quote(
                 raw_quote,
-                &policy
-                    .tdx
-                    .as_ref()
-                    .map_or_else(TdxQuoteVerificationPolicy::default, |p| *p),
+                &TdxQuoteVerificationPolicy::default(),
             )?)
         }
+        (TeeQuote::Tdx(_), Some(TeePolicy::Tdx(p))) => {
+            // Verify the quote itself
+            Ok(tdx_quote::quote::verify_quote(raw_quote, p)?)
+        }
+        (_, _) => Err(Error::VerificationFailure(format!(
+            "Bad policy type provided for this quote: {:?}",
+            quote
+        ))),
     }
 }
 
