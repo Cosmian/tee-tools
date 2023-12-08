@@ -38,7 +38,7 @@ pub(crate) fn fetch_revocation_list(
 
     let r = get(url)?;
 
-    let body = match r.status() {
+    match r.status() {
         StatusCode::OK => Ok(r.bytes()?[..].to_vec()),
         StatusCode::NOT_FOUND => Err(Error::ResponseAPIError(
             "Revocation list cannot be found".to_owned(),
@@ -50,9 +50,7 @@ pub(crate) fn fetch_revocation_list(
             "Unable to retrieve the collateral from the AMD KDS API".to_owned(),
         )),
         s => Err(Error::ResponseAPIError(format!("HTTP status code {}", s))),
-    }?;
-
-    Ok(body.to_vec())
+    }
 }
 
 /// Fetch the AMD cert chain which signed the VLEK certificate
@@ -60,7 +58,7 @@ pub(crate) fn fetch_amd_vlek_cert_chain(
     kds_url: &str,
     sev_prod_name: SevProdName,
 ) -> Result<Vec<u8>, Error> {
-    let url = format!("{kds_url}{KDS_VLEK}/{sev_prod_name}/{KDS_CERT_CHAIN}",);
+    let url = format!("{kds_url}{KDS_VLEK}/{sev_prod_name}/{KDS_CERT_CHAIN}");
     fetch_amd_cert_chain(&url)
 }
 
@@ -69,7 +67,7 @@ pub(crate) fn fetch_amd_vcek_cert_chain(
     kds_url: &str,
     sev_prod_name: SevProdName,
 ) -> Result<Vec<u8>, Error> {
-    let url = format!("{kds_url}{KDS_VCEK}/{sev_prod_name}/{KDS_CERT_CHAIN}",);
+    let url = format!("{kds_url}{KDS_VCEK}/{sev_prod_name}/{KDS_CERT_CHAIN}");
     fetch_amd_cert_chain(&url)
 }
 
@@ -83,7 +81,7 @@ fn fetch_amd_cert_chain(full_url: &str) -> Result<Vec<u8>, Error> {
 
     let r = get(url)?;
 
-    let body = match r.status() {
+    match r.status() {
         StatusCode::OK => Ok(r.bytes()?[..].to_vec()),
         StatusCode::NOT_FOUND => Err(Error::ResponseAPIError(
             "AMD certification chain cannot be found".to_owned(),
@@ -95,16 +93,14 @@ fn fetch_amd_cert_chain(full_url: &str) -> Result<Vec<u8>, Error> {
             "Unable to retrieve the collateral from the AMD KDS API".to_owned(),
         )),
         s => Err(Error::ResponseAPIError(format!("HTTP status code {}", s))),
-    }?;
-
-    Ok(body.to_vec())
+    }
 }
 
 /// Fetch the VCEK for the specified chip and TCP
 pub(crate) fn fetch_vcek(
     kds_url: &str,
     sev_prod_name: SevProdName,
-    chip_id: [u8; 64],
+    chip_id: &[u8; 64],
     reported_tcb: TcbVersion,
 ) -> Result<Vec<u8>, Error> {
     let hw_id = hex::encode(chip_id);
@@ -121,7 +117,7 @@ pub(crate) fn fetch_vcek(
 
     let r = get(url)?;
 
-    let body = match r.status() {
+    match r.status() {
         StatusCode::OK => Ok(r.bytes()?[..].to_vec()),
         StatusCode::NOT_FOUND => Err(Error::ResponseAPIError("VCEK cannot be found".to_owned())),
         StatusCode::INTERNAL_SERVER_ERROR => Err(Error::ResponseAPIError(
@@ -131,7 +127,5 @@ pub(crate) fn fetch_vcek(
             "Unable to retrieve the collateral from the AMD KDS API".to_owned(),
         )),
         s => Err(Error::ResponseAPIError(format!("HTTP status code {}", s))),
-    }?;
-
-    Ok(body.to_vec())
+    }
 }

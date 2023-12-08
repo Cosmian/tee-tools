@@ -7,13 +7,9 @@ use crate::{
 };
 
 use asn1_rs::{FromDer, Oid};
-
 use log::debug;
-
-use sev::{certs::snp::Verifiable, firmware::guest::*};
-
 use sev::certs::snp::{ca, Chain};
-
+use sev::{certs::snp::Verifiable, firmware::guest::*};
 use x509_parser::{
     self,
     certificate::X509Certificate,
@@ -42,9 +38,9 @@ pub(crate) fn verify_revocation_list(chain: &Chain, crl: &[u8]) -> Result<(), Er
     // Verify ASK is not revoked
     let is_revoked = crl
         .iter_revoked_certificates()
-        .find(|revoked| revoked.raw_serial() == cert.raw_serial());
+        .any(|revoked| revoked.raw_serial() == cert.raw_serial());
 
-    if is_revoked.is_some() {
+    if is_revoked {
         return Err(Error::VerificationFailure(
             "The ASK certificate has been revoked".to_owned(),
         ));
@@ -56,9 +52,9 @@ pub(crate) fn verify_revocation_list(chain: &Chain, crl: &[u8]) -> Result<(), Er
 
     let is_revoked = crl
         .iter_revoked_certificates()
-        .find(|revoked| revoked.raw_serial() == cert.raw_serial());
+        .any(|revoked| revoked.raw_serial() == cert.raw_serial());
 
-    if is_revoked.is_some() {
+    if is_revoked {
         return Err(Error::VerificationFailure(
             "The VCEK certificate has been revoked".to_owned(),
         ));
@@ -111,8 +107,7 @@ pub(crate) fn verify_tcb(report: &AttestationReport, cert: &X509Certificate) -> 
     if let Some(cert_bl) = extensions.get(&SnpOid::BootLoader.oid()) {
         if !check_cert_ext_byte(cert_bl, report.reported_tcb.bootloader)? {
             return Err(Error::VerificationFailure(
-                "Report TCB Boot Loader and Certificate Boot Loader mismatch
-    encountered."
+                "Report TCB Boot Loader and Certificate Boot Loader mismatch encountered."
                     .to_owned(),
             ));
         }
@@ -154,9 +149,7 @@ pub(crate) fn verify_tcb(report: &AttestationReport, cert: &X509Certificate) -> 
     if let Some(cert_hwid) = extensions.get(&SnpOid::HwId.oid()) {
         if !check_cert_ext_bytes(cert_hwid, &report.chip_id) {
             return Err(Error::VerificationFailure(
-                "Report Chip ID and Certificate Chip ID mismatch
-        encountered."
-                    .to_owned(),
+                "Report Chip ID and Certificate Chip ID mismatch encountered.".to_owned(),
             ));
         }
         debug!("Chip ID from certificate matches the attestation report.");

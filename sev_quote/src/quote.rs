@@ -128,7 +128,7 @@ pub fn verify_quote(quote: &Quote, policy: &SevQuoteVerificationPolicy) -> Resul
             vcek: Certificate::from_der(&fetch_vcek(
                 KDS_CERT_SITE,
                 SEV_PROD_NAME,
-                quote.report.chip_id,
+                &quote.report.chip_id,
                 quote.report.reported_tcb,
             )?)?,
         }),

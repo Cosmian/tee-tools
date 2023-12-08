@@ -38,7 +38,7 @@ pub fn forge_report_data(
     let mut user_report_data = hasher.finalize()[..].to_vec();
 
     // Concat additional data if any
-    user_report_data.extend(extra_data.map_or_else(|| [0u8; 32], |d| d));
+    user_report_data.extend(extra_data.unwrap_or([0u8; 32]));
 
     Ok(user_report_data)
 }
