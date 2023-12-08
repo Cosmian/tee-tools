@@ -69,7 +69,6 @@ pub fn verify_ratls(pem_ratls_cert: &[u8], policy: Option<&mut TeePolicy>) -> Re
 
     let policy = if let Some(policy) = policy {
         let expected_report_data = forge_report_data(&pk, None)?;
-        //  let mut policy = policy.clone();
         policy.set_report_data(&expected_report_data)?;
         Some(policy)
     } else {
