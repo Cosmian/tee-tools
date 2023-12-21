@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod error;
 
+#[derive(Debug)]
 pub enum TeeType {
     Sgx,
     Sev,
