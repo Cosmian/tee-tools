@@ -2763,6 +2763,7 @@ name = "tpm_quote"
 version = "0.1.0"
 dependencies = [
  "env_logger",
+ "hex",
  "log",
  "p256 0.13.2",
  "sha2 0.10.8",
