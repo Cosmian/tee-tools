@@ -25,6 +25,16 @@ pub enum TeeType {
     Tdx,
 }
 
+impl std::fmt::Display for TeeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match *self {
+            TeeType::Sgx => write!(f, "SGX"),
+            TeeType::Sev => write!(f, "SEV"),
+            TeeType::Tdx => write!(f, "TDX"),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum TeeQuote {
     Sev(Box<SevQuote>),
