@@ -1,11 +1,12 @@
 use std::fmt;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum SgxPckExtensionError {
     PEMParsingError,
-    X509ParsingError,
     SgxPckExtensionNotFoundError,
     SgxPckParsingError,
+    X509ParsingError,
 }
 
 impl fmt::Display for SgxPckExtensionError {

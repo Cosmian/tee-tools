@@ -1,0 +1,31 @@
+[package]
+name = "sgx_quote"
+version = "0.2.0"
+edition = "2021"
+license = "MIT/Apache-2.0"
+description = "Intel SGX quote parsing and verification"
+
+[lib]
+name = "sgx_quote"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+chrono = "0.4"
+hex = { workspace = true }
+hkdf = { workspace = true }
+log = { workspace = true }
+p256 = { workspace = true }
+rsa = { workspace = true }
+pccs_client = { path = "../pccs_client" }
+scroll = { version = "0.11", features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde-hex = { workspace = true }
+sgx_pck_extension = { path = "../sgx_pck_extension" }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+urlencoding = "2.1"
+x509-parser = { workspace = true, features = ["verify"] }
+
+[dev-dependencies]
+env_logger = "0.10"

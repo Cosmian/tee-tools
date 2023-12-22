@@ -1,4 +1,4 @@
-on: [push, pull_request]
+on: [push]
 
 name: Continuous integration
 
@@ -6,8 +6,11 @@ jobs:
   check:
     name: Check
     runs-on: self-hosted
-    container: ghcr.io/cosmian/intel-sgx:2.18.1
+    container: ghcr.io/cosmian/intel-sgx:2.21
     steps:
+      - name: Install dependencies
+        run: |
+          apt-get update && apt-get install -y tpm2-tools libtss2-dev
       - uses: actions/checkout@v2
       - name: Rustup setup
         uses: actions-rs/toolchain@v1

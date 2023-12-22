@@ -1,0 +1,13 @@
+[package]
+name = "pccs_client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hex = { workspace = true }
+reqwest = { workspace = true }
+thiserror = { workspace = true }
+urlencoding = "2.1"
+
+[dev-dependencies]
+x509-cert = "0.2"
