@@ -1,5 +1,6 @@
 use crate::key::{get_key_from_persistent_handle, TPM_AK_NVINDEX};
 use error::Error;
+use sha2::Digest;
 use std::convert::TryInto;
 use tss_esapi::{
     interface_types::algorithm::HashingAlgorithm,
@@ -86,17 +87,38 @@ pub fn verify_quote(
     Ok(quote_info.to_owned())
 }
 
+/// Verify the digest of the pcr_value.
+///
+/// # Returns
+///
+/// Either [`()`] or [`Error`].
+pub fn verify_pcr_value(quote_info: &QuoteInfo, pcr_value: &[u8]) -> Result<(), Error> {
+    let hpcr_value: [u8; 32] = quote_info.pcr_digest().to_owned().try_into()?;
+
+    let expected_hpcr_value = sha2::Sha256::digest(pcr_value).to_vec();
+    if expected_hpcr_value != hpcr_value[..] {
+        return Err(Error::VerificationError(format!(
+            "Bad Hash(PCR digest) in quote '{}', expected: '{}' from '{}'",
+            hex::encode(hpcr_value),
+            hex::encode(expected_hpcr_value),
+            hex::encode(pcr_value),
+        )));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
-    use crate::{get_quote, verify_quote};
+    use crate::{get_quote, verify_pcr_value, verify_quote};
     use log::info;
     use test_log::test;
     use tss_esapi::{tcti_ldr::TctiNameConf, Context};
 
     #[test]
-    fn test_get_quote() {
+    fn test_tpm_get_quote() {
         let tcti = TctiNameConf::from_str("device:/dev/tpmrm0").unwrap();
         let context = Context::new(tcti);
         match context {
@@ -111,13 +133,18 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_quote() {
+    fn test_tpm_verify_quote() {
         let quote = include_bytes!("../data/pcr_quote.plain");
         let sig = include_bytes!("../data/pcr_quote.sig");
         let pk = include_bytes!("../data/ak.pub");
 
-        let nonce: [u8; 16] = [0xff; 16];
+        let quote_info =
+            verify_quote(quote, sig, pk, Some(&[])).expect("Error verifying the TPM quote");
 
-        verify_quote(quote, sig, pk, Some(&nonce)).unwrap();
+        assert!(verify_pcr_value(
+            &quote_info,
+            &hex::decode("CF0BEEC1CEE65650DF8E89FF535A901E8C8F6180").unwrap()
+        )
+        .is_ok())
     }
 }
