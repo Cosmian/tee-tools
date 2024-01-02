@@ -152,7 +152,7 @@ pub fn get_server_certificate(host: &str, port: u32) -> Result<Vec<u8>, Error> {
         .ok_or(Error::ServerCertificateError)?;
 
     Ok(certificates
-        .get(0)
+        .first()
         .ok_or(Error::ServerCertificateError)?
         .as_ref()
         .to_vec())
