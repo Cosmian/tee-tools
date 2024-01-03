@@ -1,5 +1,6 @@
 use crate::key::{get_key_from_persistent_handle, TPM_AK_NVINDEX};
 use error::Error;
+use policy::TpmPolicy;
 use sha2::Digest;
 use std::convert::TryInto;
 use tss_esapi::{
@@ -16,6 +17,7 @@ pub mod command;
 pub mod convert;
 pub mod error;
 pub mod key;
+pub mod policy;
 pub mod verify;
 
 /// TPM Quote of PCR slots in `pcr_list`.
@@ -54,21 +56,18 @@ pub fn get_quote(
 ///
 /// # Returns
 ///
-/// Either [`QuoteInfo`] or [`Error`].
+/// Either [`()`] or [`Error`].
 pub fn verify_quote(
     quote: &[u8],
     signature: &[u8],
     public_key: &[u8],
     nonce: Option<&[u8]>,
-) -> Result<QuoteInfo, Error> {
+    pcr_value: &[u8],
+    policy: &TpmPolicy,
+) -> Result<(), Error> {
     let attestation_data = Attest::unmarshall(quote)?;
     let signature = Signature::unmarshall(signature)?;
     let public_key = Public::unmarshall(public_key)?;
-
-    let quote_info = match attestation_data.attested() {
-        AttestInfo::Quote { info } => Ok(info),
-        _ => Err(Error::QuoteError("unexpected nonce in quote".to_owned())),
-    }?;
     let expected_nonce = verify_quote_signature(&attestation_data, &signature, &public_key)?;
 
     match nonce {
@@ -84,7 +83,43 @@ pub fn verify_quote(
         }
     }
 
-    Ok(quote_info.to_owned())
+    verify_quote_policy(&attestation_data, policy)?;
+
+    let AttestInfo::Quote { info: quote_info } = attestation_data.attested() else {
+        return Err(Error::QuoteError("unexpected attestion type".to_owned()));
+    };
+
+    verify_pcr_value(quote_info, pcr_value)?;
+
+    Ok(())
+}
+
+/// Verify the quote against expected values
+pub(crate) fn verify_quote_policy(
+    attestation_data: &Attest,
+    policy: &TpmPolicy,
+) -> Result<(), Error> {
+    if let Some(reset_count) = policy.reset_count {
+        if attestation_data.clock_info().reset_count() != reset_count {
+            return Err(Error::VerificationError(format!(
+                "Attestation reset count '{}' is not equal to the set value '{}'",
+                attestation_data.clock_info().reset_count(),
+                reset_count
+            )));
+        }
+    }
+
+    if let Some(restart_count) = policy.restart_count {
+        if attestation_data.clock_info().restart_count() != restart_count {
+            return Err(Error::VerificationError(format!(
+                "Attestation restart count '{}' is not equal to the set value '{}'",
+                attestation_data.clock_info().restart_count(),
+                restart_count
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 /// Verify the digest of the pcr_value.
@@ -112,7 +147,7 @@ pub fn verify_pcr_value(quote_info: &QuoteInfo, pcr_value: &[u8]) -> Result<(), 
 mod tests {
     use std::str::FromStr;
 
-    use crate::{get_quote, verify_pcr_value, verify_quote};
+    use crate::{get_quote, policy::TpmPolicy, verify_quote};
     use log::info;
     use test_log::test;
     use tss_esapi::{tcti_ldr::TctiNameConf, Context};
@@ -123,8 +158,7 @@ mod tests {
         let context = Context::new(tcti);
         match context {
             Ok(mut context) => {
-                let (quote, signature, pk) = get_quote(&mut context, &[10u8], None).unwrap();
-                verify_quote(&quote, &signature, &pk, None).unwrap();
+                assert!(get_quote(&mut context, &[10u8], None).is_ok());
             }
             Err(_) => {
                 info!("No TPM found, skipped some tests");
@@ -138,13 +172,17 @@ mod tests {
         let sig = include_bytes!("../data/pcr_quote.sig");
         let pk = include_bytes!("../data/ak.pub");
 
-        let quote_info =
-            verify_quote(quote, sig, pk, Some(&[])).expect("Error verifying the TPM quote");
-
-        assert!(verify_pcr_value(
-            &quote_info,
-            &hex::decode("CF0BEEC1CEE65650DF8E89FF535A901E8C8F6180").unwrap()
+        assert!(verify_quote(
+            quote,
+            sig,
+            pk,
+            Some(&[]),
+            &hex::decode("CF0BEEC1CEE65650DF8E89FF535A901E8C8F6180").unwrap(),
+            &TpmPolicy {
+                reset_count: Some(25),
+                restart_count: Some(0)
+            },
         )
-        .is_ok())
+        .is_ok());
     }
 }

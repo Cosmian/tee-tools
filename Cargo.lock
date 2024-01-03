@@ -2766,6 +2766,8 @@ dependencies = [
  "hex",
  "log",
  "p256 0.13.2",
+ "serde",
+ "serde_json",
  "sha2 0.10.8",
  "test-log",
  "thiserror",
