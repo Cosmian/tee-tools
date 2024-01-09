@@ -22,6 +22,8 @@ pub mod verify;
 
 /// TPM Quote of PCR slots in `pcr_list`.
 ///
+/// Use a nonce to avoid replay attacks.
+///
 /// # Returns
 ///
 /// Either (quote, signature, public_key): ([`Vec<u8>`], [`Vec<u8>`], [`Vec<u8>`]`) or [`Error`].

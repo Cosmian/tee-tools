@@ -9,9 +9,9 @@ jobs:
 
     strategy:
       matrix:
-        env: [no-tee, sev, sgx]
+        env: [no-tee, sev, tdx, sgx]
 
-    container: ghcr.io/cosmian/intel-sgx:2.21
+    container: ghcr.io/cosmian/intel-sgx:2.22
     steps:
       - name: Install dependencies
         run: |
