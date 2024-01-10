@@ -210,14 +210,14 @@ mod tests {
                 .unwrap();
         let enclave_held_data = hex::decode("0433e2ac6ec6f7f74c3d9ebb501dd630845314d076ee62d7a1ab1b93cc247cb02e2718c106452bb5e874f277c8f58ed4e1b9b9d494c2da0670d8a21b5c2225476b").unwrap();
 
-        let claim = verify_quote(
+        assert!(verify_quote(
             maa_url,
             quote,
             Some(&enclave_held_data),
             Some(&mrenclave),
             Some(&mrsigner),
         )
-        .unwrap();
-        println!("{:?}", claim);
+        .is_ok(),);
+        // println!("{:?}", claim);
     }
 }

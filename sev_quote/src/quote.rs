@@ -187,6 +187,8 @@ mod tests {
                 get_quote(b"0123456789abcdef012345678789abcdef0123456789abcdef00000000000000")
                     .is_ok()
             );
+        } else {
+            println!("[WARNING] No SEV found, skipped `test_sev_get_quote` test");
         }
     }
 

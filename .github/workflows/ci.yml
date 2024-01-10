@@ -9,9 +9,18 @@ jobs:
 
     strategy:
       matrix:
-        env: [no-tee, sev, tdx, sgx]
-
-    container: ghcr.io/cosmian/intel-sgx:2.22
+        include:
+          - env: "no-tee"
+            docker-opt: "--device /dev/tpmrm0"
+          - env: "sev"
+            docker-opt: "--device /dev/sev-guest --device /dev/tpmrm0"
+          - env: "tdx"
+            docker-opt: "--device /dev/tdx_guest --device /dev/tpmrm0"
+          - env: "sgx"
+            docker-opt: "--device /dev/sgx_enclave --device /dev/sgx_provision"
+    container:
+      image: ghcr.io/cosmian/intel-sgx:2.22 # We work in a container because we need root access for some tests (get quote for example)
+      options: ${{ matrix.docker-opt }} # We need the device to get TPM, TDX or SEV quote
     steps:
       - name: Install dependencies
         run: |
@@ -43,6 +52,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
+          args: -- --nocapture # We want to display messages concerning skipped tests
 
       - name: Clippy
         uses: actions-rs/cargo@v1

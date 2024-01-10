@@ -423,6 +423,8 @@ mod tests {
                 get_quote(b"0123456789abcdef012345678789abcdef0123456789abcdef00000000000000")
                     .is_ok()
             );
+        } else {
+            println!("[WARNING] No TDX found, skipped `test_tdx_get_quote` test");
         }
     }
 
