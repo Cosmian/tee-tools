@@ -150,7 +150,6 @@ mod tests {
     use std::str::FromStr;
 
     use crate::{get_quote, policy::TpmPolicy, verify_quote};
-    use log::info;
     use test_log::test;
     use tss_esapi::{tcti_ldr::TctiNameConf, Context};
 
@@ -163,7 +162,7 @@ mod tests {
                 assert!(get_quote(&mut context, &[10u8], None).is_ok());
             }
             Err(_) => {
-                info!("No TPM found, skipped some tests");
+                println!("[WARNING] No TPM found, skipped `test_tpm_get_quote` test");
             }
         }
     }

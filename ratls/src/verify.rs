@@ -194,8 +194,7 @@ mod tests {
         .replace(['\n', ' '], "");
         let expected_server_cert = general_purpose::STANDARD.decode(b64_server_cert).unwrap();
         assert_eq!(expected_server_cert, server_cert);
-        let (_rem, cert) = x509_parser::parse_x509_certificate(&server_cert).unwrap();
-        println!("{:?}", cert);
+        assert!(x509_parser::parse_x509_certificate(&server_cert).is_ok());
     }
 
     #[test]
