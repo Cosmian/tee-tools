@@ -1,23 +1,22 @@
 # TEE TOOLS
 
-It contains severals libraries to handle the Intel SGX/TDX and AMD SEV quote: generation, parsing and verification. 
+It contains severals libraries to handle:
 
-It also contains `ratls_certtool` to:
-- Generate a RATLS certificate 
-- Verify a RATLS certificate
+- the Intel SGX quote: generation, parsing and verification
+- the Intel TDX quote: generation, parsing and verification
+- the AMD SEV quote: generation, parsing and verification
+- a TPM quote: generation, parsing and verification
+- RATLS certificate: generation and verification
 
-## Compile
+## Compile and test
+
+See [TPM README.md](crate/tpm_quote/README.md) for prerequisite installations.
+
+Also, install `libssl-dev`.
+
+Then:
 
 ```console
 $ cargo build
-```
-
-## Usage
-
-```console
-# Require an SGX enclave/SEV VM to run:
-$ ratls_certtool generate --help
-
-# On any hosts:
-$ ratls_certtool verify --help
+$ cargo test -- --nocapture
 ```

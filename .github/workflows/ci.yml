@@ -24,7 +24,7 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-          apt-get update && apt-get install -y tpm2-tools libtss2-dev
+          apt-get update && apt-get install -y libssl-dev tpm2-tools libtss2-dev
 
       - uses: actions/checkout@v2
 

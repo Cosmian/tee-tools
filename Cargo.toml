@@ -1,17 +1,15 @@
 [workspace]
 resolver = "2"
 members = [
-    "maa_client",
-    "pccs_client",
-    "ratls",
-    "rafs_tool",
-    "ratls_certtool",
-    "sev_quote",
-    "sgx_quote",
-    "sgx_pck_extension",
-    "tdx_quote",
-    "tee_attestation",
-    "tpm_quote"
+    "crate/maa_client",
+    "crate/pccs_client",
+    "crate/ratls",
+    "crate/sev_quote",
+    "crate/sgx_quote",
+    "crate/sgx_pck_extension",
+    "crate/tdx_quote",
+    "crate/tee_attestation",
+    "crate/tpm_quote",
 ]
 
 
