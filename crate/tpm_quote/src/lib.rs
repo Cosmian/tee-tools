@@ -20,6 +20,27 @@ pub mod key;
 pub mod policy;
 pub mod verify;
 
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
+pub enum PcrHashMethod {
+    Sha1,
+    Sha256,
+    Sha384,
+    Sha512,
+}
+
+impl PcrHashMethod {
+    pub fn size(&self) -> usize {
+        match self {
+            PcrHashMethod::Sha1 => 20,
+            PcrHashMethod::Sha256 => 32,
+            PcrHashMethod::Sha384 => 48,
+            PcrHashMethod::Sha512 => 64,
+        }
+    }
+}
+
 /// TPM Quote of PCR slots in `pcr_list`.
 ///
 /// Use a nonce to avoid replay attacks.
@@ -32,6 +53,7 @@ pub fn get_quote(
     context: &mut Context,
     pcr_list: &[u8],
     nonce: Option<&[u8]>,
+    method: PcrHashMethod,
 ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), Error> {
     let pcr_list = pcr_list
         .iter()
@@ -39,7 +61,15 @@ pub fn get_quote(
         .collect::<Result<Vec<PcrSlot>, _>>()?;
 
     let pcr_selection_list = PcrSelectionListBuilder::new()
-        .with_selection(HashingAlgorithm::Sha1, &pcr_list)
+        .with_selection(
+            match method {
+                PcrHashMethod::Sha1 => HashingAlgorithm::Sha1,
+                PcrHashMethod::Sha256 => HashingAlgorithm::Sha256,
+                PcrHashMethod::Sha384 => HashingAlgorithm::Sha384,
+                PcrHashMethod::Sha512 => HashingAlgorithm::Sha512,
+            },
+            &pcr_list,
+        )
         .build()?;
 
     let (ak_handle, ak_pub) = get_key_from_persistent_handle(context, TPM_AK_NVINDEX)?;
@@ -159,7 +189,9 @@ mod tests {
         let context = Context::new(tcti);
         match context {
             Ok(mut context) => {
-                assert!(get_quote(&mut context, &[10u8], None).is_ok());
+                assert!(
+                    get_quote(&mut context, &[10u8], None, crate::PcrHashMethod::Sha256).is_ok()
+                );
             }
             Err(_) => {
                 println!("[WARNING] No TPM found, skipped `test_tpm_get_quote` test");
