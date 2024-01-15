@@ -18,7 +18,7 @@ pub struct SevQuoteVerificationPolicy {
     pub image_id: Option<[u8; 16]>,
     /// Is this the image you expected?
     pub guest_svn: Option<u32>,
-    ///Is this you?
+    /// Is this you?
     #[serde(with = "SerHexOpt::<Strict>")]
     pub id_key_digest: Option<[u8; 48]>,
     /// Is this you?
