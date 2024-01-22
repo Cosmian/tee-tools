@@ -1,6 +1,6 @@
 [package]
 name = "sev_quote"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT/Apache-2.0"
 description = "AMD SEV quote parsing and verification"
@@ -11,7 +11,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 asn1-rs = { workspace = true }
-asn1 = { workspace = true }
 bincode = { workspace = true }
 hex = { workspace = true }
 hkdf = { workspace = true }
@@ -19,7 +18,7 @@ log = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde-hex = { workspace = true }
-sev = { git = "https://github.com/Cosmian/sev", features = [ # TODO: update after merging in virtee/sev
+sev = { git = "https://github.com/virtee/sev", rev = "6a176a5f6068d30ac629fe59c13634a55076e7ae", features = [ # TODO: update after releasing
     "snp",
     "openssl",
     "sev",
