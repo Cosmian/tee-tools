@@ -35,7 +35,7 @@ jobs:
           toolchain: stable
           override: true
 
-      - run: rustup component add rustfmt && rustup component add clippy
+      - run: rustup component add rustfmt && rustup component add clippy && cargo install cargo-machete
 
       - name: Cargo fmt
         uses: actions-rs/cargo@v1
@@ -48,14 +48,23 @@ jobs:
         with:
           command: check
 
+      - name: Clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: -- -D warnings
+
+      - name: Machete (deps checker)
+        uses: actions-rs/cargo@v1
+        with:
+            command: machete
+
       - name: Cargo test
         uses: actions-rs/cargo@v1
         with:
           command: test
           args: -- --nocapture # We want to display messages concerning skipped tests
 
-      - name: Clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: -- -D warnings
+  
+          
+          

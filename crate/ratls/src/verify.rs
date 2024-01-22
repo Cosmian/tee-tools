@@ -1,14 +1,8 @@
 use p256::ecdsa::VerifyingKey;
 
-use rustls::{
-    client::ServerCertVerified,
-    client::{ServerCertVerifier, ServerName},
-    Certificate, Error as RustTLSError,
-};
 use sha2::{Digest, Sha256};
 use spki::DecodePublicKey;
-use std::io::Write;
-use std::{str::FromStr, time::SystemTime};
+use std::str::FromStr;
 use tee_attestation::{verify_quote, TeePolicy};
 
 use crate::{
@@ -108,94 +102,12 @@ fn extract_quote(ratls_cert: &X509Certificate) -> Result<Vec<u8>, Error> {
     ))
 }
 
-pub struct NoVerifier;
-
-impl ServerCertVerifier for NoVerifier {
-    fn verify_server_cert(
-        &self,
-        _: &Certificate,                    // end_entity
-        _: &[Certificate],                  // intermediates
-        _: &ServerName,                     // server_name
-        _: &mut dyn Iterator<Item = &[u8]>, // scts
-        _: &[u8],                           // ocsp_response
-        _: SystemTime,                      // now
-    ) -> Result<ServerCertVerified, RustTLSError> {
-        Ok(ServerCertVerified::assertion())
-    }
-}
-
-/// Get the RATLS certificate from a `host`:`port`
-pub fn get_server_certificate(host: &str, port: u32) -> Result<Vec<u8>, Error> {
-    let root_store = rustls::RootCertStore::empty();
-    let mut socket = std::net::TcpStream::connect(format!("{host}:{port}"))
-        .map_err(|_| Error::ConnectionError)?;
-
-    let mut config = rustls::ClientConfig::builder()
-        .with_safe_defaults()
-        .with_root_certificates(root_store)
-        .with_no_client_auth();
-    config
-        .dangerous()
-        .set_certificate_verifier(std::sync::Arc::new(NoVerifier));
-
-    let rc_config = std::sync::Arc::new(config);
-    let dns_name = host.try_into().map_err(|_| Error::DNSNameError)?;
-
-    let mut client =
-        rustls::ClientConnection::new(rc_config, dns_name).map_err(|_| Error::ConnectionError)?;
-
-    let mut stream = rustls::Stream::new(&mut client, &mut socket);
-    stream.write_all(b"GET / HTTP/1.1\r\nConnection: close\r\n\r\n")?;
-
-    let certificates = client
-        .peer_certificates()
-        .ok_or(Error::ServerCertificateError)?;
-
-    Ok(certificates
-        .first()
-        .ok_or(Error::ServerCertificateError)?
-        .as_ref()
-        .to_vec())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{engine::general_purpose, Engine as _};
     use tee_attestation::{
         SevQuoteVerificationPolicy, SgxQuoteVerificationPolicy, TdxQuoteVerificationPolicy,
     };
-
-    #[test]
-    fn test_ratls_get_server_certificate() {
-        let server_cert = get_server_certificate("self-signed.badssl.com", 443).unwrap();
-
-        let b64_server_cert = r#"
-        MIIDeTCCAmGgAwIBAgIJAMrlEvmXqB1TMA0GCSqGSIb3DQEBCwUAMGIxCzAJBgNV
-        BAYTAlVTMRMwEQYDVQQIDApDYWxpZm9ybmlhMRYwFAYDVQQHDA1TYW4gRnJhbmNp
-        c2NvMQ8wDQYDVQQKDAZCYWRTU0wxFTATBgNVBAMMDCouYmFkc3NsLmNvbTAeFw0y
-        MzExMjkyMjM0MDRaFw0yNTExMjgyMjM0MDRaMGIxCzAJBgNVBAYTAlVTMRMwEQYD
-        VQQIDApDYWxpZm9ybmlhMRYwFAYDVQQHDA1TYW4gRnJhbmNpc2NvMQ8wDQYDVQQK
-        DAZCYWRTU0wxFTATBgNVBAMMDCouYmFkc3NsLmNvbTCCASIwDQYJKoZIhvcNAQEB
-        BQADggEPADCCAQoCggEBAMIE7PiM7gTCs9hQ1XBYzJMY61yoaEmwIrX5lZ6xKyx2
-        PmzAS2BMTOqytMAPgLaw+XLJhgL5XEFdEyt/ccRLvOmULlA3pmccYYz2QULFRtMW
-        hyefdOsKnRFSJiFzbIRMeVXk0WvoBj1IFVKtsyjbqv9u/2CVSndrOfEk0TG23U3A
-        xPxTuW1CrbV8/q71FdIzSOciccfCFHpsKOo3St/qbLVytH5aohbcabFXRNsKEqve
-        ww9HdFxBIuGa+RuT5q0iBikusbpJHAwnnqP7i/dAcgCskgjZjFeEU4EFy+b+a1SY
-        QCeFxxC7c3DvaRhBB0VVfPlkPz0sw6l865MaTIbRyoUCAwEAAaMyMDAwCQYDVR0T
-        BAIwADAjBgNVHREEHDAaggwqLmJhZHNzbC5jb22CCmJhZHNzbC5jb20wDQYJKoZI
-        hvcNAQELBQADggEBAJYrbHPC6Yor7oi3aimJAPnnTh9Z7sQyaGfZ4I1ZIayWGIF7
-        +9dq/VtCYxEeq7bZELvqcK6LMtQQ7xGoJ5yCgJWjO/SbLaSy1AEa5m9im3Gg2k4w
-        h1AE8Z3CQUEdazVTsLKxdCp+eN62jQAzTY8xQ6yKDaWmTUhvSgErJyBv/H+vTQ+9
-        L5ghqMrDUZTkxgwlXs3OyJi/S/Rfv9OGiEua/T+h3yHEzOL53d+IiagOUCjUg7mP
-        5g4MP8zks3VcxERVjtzOahBH7fvhsMuJ/i+lSiNMMVaOr/U9Y1Y9kq96YIPax6Re
-        Jok9KYiYJsWbiimaCxWFT/HbLvD+qri7lD2Gm8A=
-        "#
-        .replace(['\n', ' '], "");
-        let expected_server_cert = general_purpose::STANDARD.decode(b64_server_cert).unwrap();
-        assert_eq!(expected_server_cert, server_cert);
-        assert!(x509_parser::parse_x509_certificate(&server_cert).is_ok());
-    }
 
     #[test]
     fn test_ratls_sgx_verify_ratls() {
