@@ -1,17 +1,24 @@
 pub mod api;
 pub mod error;
 pub mod jwk;
+pub mod utils;
 
 use std::{ops::Deref, str::FromStr};
 
 use crate::{
     api::{maa_attest_sgx_enclave, maa_certificates},
     error::Error,
+    utils::base64url_serde,
 };
 
+use base64::{engine::general_purpose, Engine};
 use jose_jws::{General, Protected, Unprotected};
 use jwk::MaaJwks;
-use jwt_simple::prelude::{RS256PublicKey, RSAPublicKeyLike};
+use jwt_simple::{
+    common::VerificationOptions,
+    prelude::{RS256PublicKey, RSAPublicKeyLike},
+    reexports::rand::{self, Rng as _},
+};
 use serde::{Deserialize, Serialize};
 
 /// Sub-structure of [`SgxClaim`].
@@ -58,6 +65,8 @@ pub struct SgxPolicy {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SgxClaim {
+    #[serde(with = "base64url_serde")]
+    pub maa_ehd: Vec<u8>,
     pub is_debuggable: bool,
     pub maa_attestationcollateral: SgxCollateral,
     pub product_id: u64,
@@ -92,7 +101,7 @@ pub struct SgxClaim {
 /// See [`Examples of an attestation token`].
 ///
 /// [`Examples of an attestation token`]: https://learn.microsoft.com/en-us/azure/attestation/attestation-token-examples
-pub fn verify_jws(token: &str, jwks: MaaJwks) -> Result<SgxClaim, Error> {
+pub fn verify_jws(token: &str, jwks: MaaJwks, nonce: Option<&[u8]>) -> Result<SgxClaim, Error> {
     let jws = General::from_str(token)
         .map_err(|_| Error::DecodeError("can't deserialize JWS".to_owned()))?;
 
@@ -121,8 +130,13 @@ pub fn verify_jws(token: &str, jwks: MaaJwks) -> Result<SgxClaim, Error> {
         .ok_or(Error::MaaResponseError("kid not found in JWKS".to_owned()))?;
     let pk: RS256PublicKey = jwk.try_into()?;
 
+    let options = nonce.map(|nonce| VerificationOptions {
+        required_nonce: Some(general_purpose::URL_SAFE_NO_PAD.encode(nonce)),
+        ..Default::default()
+    });
+
     let claim = pk
-        .verify_token::<SgxClaim>(token, None)
+        .verify_token::<SgxClaim>(token, options)
         .map_err(|_| Error::MaaResponseError("failed to verify JWS token".to_string()))?;
 
     Ok(claim.custom)
@@ -148,9 +162,12 @@ pub fn verify_quote(
     mr_enclave: Option<&[u8]>,
     mr_signer: Option<&[u8]>,
 ) -> Result<SgxClaim, Error> {
+    let mut rng = rand::thread_rng();
+
     let jwks = maa_certificates(maa_url)?;
-    let token = maa_attest_sgx_enclave(maa_url, quote, enclave_held_data)?;
-    let claim = verify_jws(&token, jwks)?;
+    let nonce: [u8; 32] = rng.gen();
+    let token = maa_attest_sgx_enclave(maa_url, &nonce, quote, enclave_held_data)?;
+    let claim = verify_jws(&token, jwks, Some(&nonce))?;
 
     if claim.tee != "sgx" {
         return Err(Error::SgxVerificationError(format!(
@@ -210,14 +227,14 @@ mod tests {
                 .unwrap();
         let enclave_held_data = hex::decode("0433e2ac6ec6f7f74c3d9ebb501dd630845314d076ee62d7a1ab1b93cc247cb02e2718c106452bb5e874f277c8f58ed4e1b9b9d494c2da0670d8a21b5c2225476b").unwrap();
 
-        assert!(verify_quote(
+        let _ = verify_quote(
             maa_url,
             quote,
             Some(&enclave_held_data),
             Some(&mrenclave),
             Some(&mrsigner),
         )
-        .is_ok(),);
+        .unwrap();
         // println!("{:?}", claim);
     }
 }

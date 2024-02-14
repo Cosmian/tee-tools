@@ -1,4 +1,4 @@
-FROM ghcr.io/cosmian/intel-sgx:2.21
+FROM ghcr.io/cosmian/intel-sgx:2.23
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
@@ -11,6 +11,7 @@ RUN rustup component add clippy rustfmt
 RUN apt-get update && apt-get install --no-install-recommends -qq -y \
     build-essential \
     pkg-config \
+    libssl-dev \
     python3 \
     python3-pip \
     tpm2-tools \

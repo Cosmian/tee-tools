@@ -6,7 +6,7 @@ use base64::{engine::general_purpose, Engine as _};
 use reqwest::StatusCode;
 use serde_json::{json, Map, Value};
 
-/// Fetch Microsoft certificates for Microsoft Azure Attestation (MAA) service.
+/// Fetch Microsoft certificates from Microsoft Azure Attestation (MAA) API.
 ///
 /// # Returns
 ///
@@ -55,43 +55,23 @@ pub fn maa_certificates(maa_url: &str) -> Result<MaaJwks, Error> {
     }
 }
 
-/// Request MAA service to attest SGX enclave from parameter.
+/// Generic call to retrieve JWT token from Microsoft Azure Attestation (MAA) API.
 ///
 /// # Returns
 ///
-/// Either [`String`] with RS256 JWT token or [`Error`].
-///
-/// # External documentation
-///
-/// See [`Attest Sgx Enclave from MAA API`].
-///
-/// [`Attest Sgx Enclave from MAA API`]: https://learn.microsoft.com/en-us/rest/api/attestation/attestation/attest-sgx-enclave
-pub fn maa_attest_sgx_enclave(
-    maa_url: &str,
-    quote: &[u8],
-    enclave_held_data: Option<&[u8]>,
-) -> Result<String, Error> {
+/// Either JSON Web Key Set [`MaaJwks`] or [`Error`].
+fn maa_attest(maa_url: &str, endpoint: &str, json_params: Value) -> Result<String, Error> {
     let url = reqwest::Url::parse_with_params(
-        &format!("{maa_url}/attest/SgxEnclave"),
+        &format!("{maa_url}{endpoint}"),
         &[("api-version", "2022-08-01")],
     )
     .map_err(|e| Error::BadURLError(e.to_string()))?;
-
-    let mut payload = json!({"quote": general_purpose::URL_SAFE_NO_PAD.encode(quote)});
-
-    if let Some(enclave_held_data) = enclave_held_data {
-        let root_object = payload.as_object_mut().expect("no object found in JSON");
-        root_object.insert(
-            String::from("runtimeData"),
-            json!({"data": general_purpose::URL_SAFE_NO_PAD.encode(enclave_held_data), "dataType": "Binary"}),
-        );
-    }
 
     let r = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
         .build()?
         .post(url)
-        .json(&payload)
+        .json(&json_params)
         .send()?;
 
     match r.status() {
@@ -133,4 +113,80 @@ pub fn maa_attest_sgx_enclave(
             )))
         }
     }
+}
+
+/// Request MAA service to attest SGX enclave from parameters.
+///
+/// # Returns
+///
+/// Either [`String`] with RS256 JWT token or [`Error`].
+///
+/// # External documentation
+///
+/// See [`Attest Sgx Enclave from MAA API`].
+///
+/// [`Attest Sgx Enclave from MAA API`]: https://learn.microsoft.com/en-us/rest/api/attestation/attestation/attest-sgx-enclave
+pub fn maa_attest_sgx_enclave(
+    maa_url: &str,
+    nonce: &[u8],
+    quote: &[u8],
+    runtime_data: Option<&[u8]>,
+) -> Result<String, Error> {
+    let mut payload = json!({"quote": general_purpose::URL_SAFE_NO_PAD.encode(quote)});
+
+    let json_root_object = payload
+        .as_object_mut()
+        .expect("no root object found in JSON");
+
+    json_root_object.insert(
+        "nonce".to_owned(),
+        Value::from(general_purpose::URL_SAFE_NO_PAD.encode(nonce)),
+    );
+
+    if let Some(runtime_data) = runtime_data {
+        let root_object = payload.as_object_mut().expect("no object found in JSON");
+        root_object.insert(
+            String::from("runtimeData"),
+            json!({"data": general_purpose::URL_SAFE_NO_PAD.encode(runtime_data), "dataType": "Binary"}),
+        );
+    }
+
+    maa_attest(maa_url, "/attest/SgxEnclave", payload)
+}
+
+/// Request MAA service to attest AMD SEV-SNP CVM from parameters.
+///
+/// # Returns
+///
+/// Either [`String`] with RS256 JWT token or [`Error`].
+///
+/// # External documentation
+///
+/// See [`Attest Sev Snp VM from MAA API`].
+///
+/// [`Attest Sev Snp VM from MAA API`]: https://learn.microsoft.com/en-us/rest/api/attestation/attestation/attest-sev-snp-vm
+pub fn maa_attest_sev_snp(
+    maa_url: &str,
+    nonce: &[u8],
+    report: &[u8],
+    runtime_data: Option<&[u8]>,
+) -> Result<String, Error> {
+    let mut payload = json!({"report": general_purpose::URL_SAFE_NO_PAD.encode(report)});
+    let json_root_object = payload
+        .as_object_mut()
+        .expect("no root object found in JSON");
+
+    json_root_object.insert(
+        "nonce".to_owned(),
+        json!({"data": general_purpose::URL_SAFE_NO_PAD.encode(nonce), "dataType": "Binary"}),
+    );
+
+    if let Some(runtime_data) = runtime_data {
+        json_root_object.insert(
+            "runtimeData".to_owned(),
+            json!({"data": general_purpose::URL_SAFE_NO_PAD.encode(runtime_data), "dataType": "Binary"}),
+        );
+    }
+
+    maa_attest(maa_url, "/attest/SevSnpVm", payload)
 }
