@@ -120,16 +120,16 @@ pub fn is_running_inside_tee() -> bool {
 
 /// Parse a quote
 pub fn parse_quote(raw_quote: &[u8]) -> Result<TeeQuote, Error> {
-    if let Ok(quote) = sev_quote::quote::parse_quote(raw_quote) {
-        return Ok(TeeQuote::Sev(Box::new(quote)));
-    }
-
     if let Ok((quote, _, _, _)) = sgx_quote::quote::parse_quote(raw_quote) {
         return Ok(TeeQuote::Sgx(Box::new(quote)));
     }
 
     if let Ok((quote, _)) = tdx_quote::quote::parse_quote(raw_quote) {
         return Ok(TeeQuote::Tdx(Box::new(quote)));
+    }
+
+    if let Ok(quote) = sev_quote::quote::parse_quote(raw_quote) {
+        return Ok(TeeQuote::Sev(Box::new(quote)));
     }
 
     Err(Error::UnsupportedTeeError)
