@@ -56,8 +56,23 @@ impl From<(AttestationReport, Vec<CertTableEntry>)> for Quote {
 
 /// Parse the raw quote into an AttestationReport
 pub fn parse_quote(raw_quote: &[u8]) -> Result<Quote, Error> {
-    bincode::deserialize(raw_quote)
-        .map_err(|_| Error::InvalidFormat("Can't deserialize the SEV report bytes".to_owned()))
+    let quote = bincode::deserialize(raw_quote)
+        .map_err(|_| Error::InvalidFormat("Can't deserialize the SEV report bytes".to_owned()));
+
+    match quote {
+        Ok(quote) => Ok(quote),
+        Err(_) => {
+            // SEV quote only contains the attestation report without certs
+            let quote: AttestationReport = bincode::deserialize(raw_quote).map_err(|_| {
+                Error::InvalidFormat("Can't deserialize the SEV report bytes".to_owned())
+            })?;
+
+            Ok(Quote {
+                report: quote,
+                certs: vec![],
+            })
+        }
+    }
 }
 
 /// Get the quote of the SEV VM
