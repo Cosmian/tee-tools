@@ -80,7 +80,7 @@ impl TryFrom<MaaJwk> for Jwk {
     }
 }
 
-/// Conversion from [`BadJwk`] to [`jwt_simple::algorithms::RS256PublicKey`].
+/// Conversion from [`MaaJwk`] to [`jwt_simple::algorithms::RS256PublicKey`].
 impl TryFrom<MaaJwk> for RS256PublicKey {
     type Error = Error;
 
@@ -126,7 +126,7 @@ pub struct MaaJwks {
     pub keys: Vec<MaaJwk>,
 }
 
-/// Conversion from [`BadJwks`] to [`jose_jwk::JwkSet`].
+/// Conversion from [`MaaJwks`] to [`jose_jwk::JwkSet`].
 impl TryFrom<MaaJwks> for JwkSet {
     type Error = Error;
 
@@ -146,7 +146,7 @@ impl MaaJwks {
     ///
     /// # Returns
     ///
-    /// [`Some(BadJwk)`] if success, [`None`] otherwise.
+    /// [`Some(MaaJwk)`] if success, [`None`] otherwise.
     pub fn find(self, kid: &str) -> Option<MaaJwk> {
         self.keys.into_iter().find(|key| key.kid == kid)
     }
