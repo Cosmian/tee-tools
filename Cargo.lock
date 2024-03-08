@@ -2384,6 +2384,7 @@ dependencies = [
 name = "tee_attestation"
 version = "0.1.1"
 dependencies = [
+ "azure_sev_quote",
  "env_logger",
  "serde",
  "sev_quote",

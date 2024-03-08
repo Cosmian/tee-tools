@@ -10,6 +10,7 @@ name = "tee_attestation"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+azure_sev_quote = { path = "../azure_sev_quote" }
 sha2 = "0.10"
 sev_quote = { path = "../sev_quote" }
 serde = { workspace = true }

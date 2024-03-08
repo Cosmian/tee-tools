@@ -67,7 +67,7 @@ pub fn get_ratls_extension(
     extra_data: Option<[u8; 32]>,
 ) -> Result<RatlsExtension, Error> {
     let user_report_data = forge_report_data(ratls_public_key, extra_data)?;
-    let quote = get_quote(&user_report_data)?;
+    let quote = get_quote(Some(&user_report_data))?;
 
     match guess_tee()? {
         TeeType::Sev => Ok(RatlsExtension::AMDSevTee(AMDSevRatlsExtension::from(

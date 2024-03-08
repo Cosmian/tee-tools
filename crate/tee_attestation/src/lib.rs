@@ -18,6 +18,8 @@ use serde::{Deserialize, Serialize};
 
 pub mod error;
 
+pub const REPORT_DATA_SIZE: usize = 64;
+
 #[derive(Debug)]
 pub enum TeeType {
     Sgx,
@@ -149,23 +151,42 @@ pub fn forge_report_data_with_nonce(nonce: &[u8; 32], data: &[u8]) -> Result<Vec
 
 /// Generate a quote for the current tee
 #[cfg(target_os = "linux")]
-pub fn get_quote(report_data: &[u8]) -> Result<Vec<u8>, Error> {
-    match guess_tee()? {
-        TeeType::Sev => Ok(sev_quote::quote::get_quote(
-            &pad_report_data(report_data, sev_quote::REPORT_DATA_SIZE)?
-                .try_into()
-                .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
-        )?),
-        TeeType::Sgx => Ok(sgx_quote::quote::get_quote(
-            &pad_report_data(report_data, sgx_quote::REPORT_DATA_SIZE)?
-                .try_into()
-                .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
-        )?),
-        TeeType::Tdx => Ok(tdx_quote::quote::get_quote(
-            &pad_report_data(report_data, tdx_quote::REPORT_DATA_SIZE)?
-                .try_into()
-                .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
-        )?),
+pub fn get_quote(report_data: Option<&[u8]>) -> Result<Vec<u8>, Error> {
+    let report_data = if let Some(data) = report_data {
+        pad_report_data(data, REPORT_DATA_SIZE)?
+    } else {
+        vec![0u8; REPORT_DATA_SIZE]
+    };
+
+    match guess_tee() {
+        Ok(tee) => match tee {
+            TeeType::Sev => Ok(sev_quote::quote::get_quote(
+                &report_data
+                    .try_into()
+                    .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
+            )?),
+            TeeType::Sgx => Ok(sgx_quote::quote::get_quote(
+                &report_data
+                    .try_into()
+                    .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
+            )?),
+            TeeType::Tdx => Ok(tdx_quote::quote::get_quote(
+                &report_data
+                    .try_into()
+                    .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
+            )?),
+        },
+        Err(_) => {
+            // No low-level access to the device on Microsoft Azure!
+            // SEV quote is stored in the vTPM at boot time
+            if let Ok(raw_quote) = azure_sev_quote::get_quote_from_tpm() {
+                if sev_quote::quote::parse_quote(&raw_quote).is_ok() {
+                    return Ok(raw_quote);
+                }
+            }
+
+            Err(Error::UnsupportedTeeError)
+        }
     }
 }
 
