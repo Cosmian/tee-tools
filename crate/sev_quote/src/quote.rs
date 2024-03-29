@@ -132,15 +132,15 @@ pub fn verify_quote(quote: &Quote, policy: &SevQuoteVerificationPolicy) -> Resul
     let chain = match (vlek, ark, ask, vcek) {
         (Some(vlek), _, _, _) => Ok(Chain {
             ca: bytes_to_chain(&fetch_amd_vlek_cert_chain(KDS_CERT_SITE, SEV_PROD_NAME)?)?,
-            vcek: Certificate::from_der(&vlek.data)?,
+            vek: Certificate::from_der(&vlek.data)?,
         }),
         (None, Some(ark), Some(ask), Some(vcek)) => Ok(Chain {
             ca: ca::Chain::from_der(&ark.data, &ask.data)?,
-            vcek: Certificate::from_der(&vcek.data)?,
+            vek: Certificate::from_der(&vcek.data)?,
         }),
         (None, None, None, None) => Ok(Chain {
             ca: bytes_to_chain(&fetch_amd_vcek_cert_chain(KDS_CERT_SITE, SEV_PROD_NAME)?)?,
-            vcek: Certificate::from_der(&fetch_vcek(
+            vek: Certificate::from_der(&fetch_vcek(
                 KDS_CERT_SITE,
                 SEV_PROD_NAME,
                 &quote.report.chip_id,
@@ -162,7 +162,7 @@ pub fn verify_quote(quote: &Quote, policy: &SevQuoteVerificationPolicy) -> Resul
     let crl = fetch_revocation_list(KDS_CERT_SITE, SEV_PROD_NAME)?;
     verify_revocation_list(&chain, &crl)?;
 
-    let vcek_pem = chain.vcek.to_pem()?;
+    let vcek_pem = chain.vek.to_pem()?;
     let (rem, pem) = parse_x509_pem(&vcek_pem)?;
 
     if !rem.is_empty() || &pem.label != "CERTIFICATE" {
