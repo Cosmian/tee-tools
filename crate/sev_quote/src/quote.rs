@@ -111,11 +111,11 @@ pub fn verify_quote(quote: &Quote, policy: &SevQuoteVerificationPolicy) -> Resul
     // Check the policy
     verify_quote_policy(&quote.report, policy)?;
 
+    println!("{:?}", quote.certs);
     // Try to build the Chain object by dealing with various cases.
-    let vlek = quote
-        .certs
-        .iter()
-        .find(|item| item.cert_type == CertType::OTHER(AWS_VLEK_TYPE));
+    let vlek = quote.certs.iter().find(|item| {
+        item.cert_type == CertType::OTHER(AWS_VLEK_TYPE) || item.cert_type == CertType::VLEK
+    });
     let ark = quote
         .certs
         .iter()
@@ -146,6 +146,10 @@ pub fn verify_quote(quote: &Quote, policy: &SevQuoteVerificationPolicy) -> Resul
                 &quote.report.chip_id,
                 quote.report.reported_tcb,
             )?)?,
+        }),
+        (_, _, _, Some(vcek)) => Ok(Chain {
+            ca: bytes_to_chain(&fetch_amd_vcek_cert_chain(KDS_CERT_SITE, SEV_PROD_NAME)?)?,
+            vek: Certificate::from_der(&vcek.data)?,
         }),
         (_, _, _, _) => Err(Error::Unimplemented(
             "Unhandled combination of ARK/ASK/VCEK/VLEK certificates".to_owned(),

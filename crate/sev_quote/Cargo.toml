@@ -18,7 +18,7 @@ log = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde-hex = { workspace = true }
-sev = { git = "https://github.com/virtee/sev", branch = "main", features = [
+sev = { git = "https://github.com/virtee/sev", version = "3.1", features = [
     "snp",
     "openssl",
     "sev",
