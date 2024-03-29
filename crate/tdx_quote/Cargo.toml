@@ -12,10 +12,10 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 hex = { workspace = true }
 log = { workspace = true }
-nix = { version = "0.27", features = ["ioctl"] }
+nix = { version = "0.28", features = ["ioctl"] }
 p256 = { workspace = true }
 pccs_client = { path = "../pccs_client" }
-scroll = { version = "0.11", features = ["derive"] }
+scroll = { version = "0.12", features = ["derive"] }
 serde = { workspace = true }
 serde-hex = { workspace = true }
 sgx_quote = { path = "../sgx_quote" }
@@ -23,4 +23,4 @@ sha2 = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-env_logger = "0.10"
+env_logger = "0.11"

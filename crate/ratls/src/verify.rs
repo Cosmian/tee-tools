@@ -119,13 +119,13 @@ mod tests {
         let mrenclave = mrenclave.as_slice().try_into().unwrap();
         let public_signer_key = include_str!("../data/signer-key.pem");
 
-        assert!(verify_ratls(
+        verify_ratls(
             cert,
             Some(&mut TeePolicy::Sgx(
-                SgxQuoteVerificationPolicy::new(mrenclave, public_signer_key).unwrap()
-            ))
+                SgxQuoteVerificationPolicy::new(mrenclave, public_signer_key).unwrap(),
+            )),
         )
-        .is_ok());
+        .unwrap();
     }
 
     #[test]
@@ -136,23 +136,23 @@ mod tests {
             hex::decode(b"c2c84b9364fc9f0f54b04534768c860c6e0e386ad98b96e8b98eca46ac8971d05c531ba48373f054c880cfd1f4a0a84e")
                 .unwrap().try_into().unwrap();
 
-        assert!(verify_ratls(
+        verify_ratls(
             cert,
             Some(&mut TeePolicy::Sev(SevQuoteVerificationPolicy::new(
-                measurement
-            )))
+                measurement,
+            ))),
         )
-        .is_ok());
+        .unwrap();
     }
 
     #[test]
     fn test_ratls_tdx_verify_ratls() {
         let cert = include_bytes!("../data/tdx-cert.ratls.pem");
 
-        assert!(verify_ratls(
+        verify_ratls(
             cert,
-            Some(&mut TeePolicy::Tdx(TdxQuoteVerificationPolicy::new()))
+            Some(&mut TeePolicy::Tdx(TdxQuoteVerificationPolicy::new())),
         )
-        .is_ok());
+        .unwrap();
     }
 }

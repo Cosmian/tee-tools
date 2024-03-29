@@ -11,7 +11,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 azure_sev_quote = { path = "../azure_sev_quote" }
-sha2 = "0.10"
+sha2 = { workspace = true }
 sev_quote = { path = "../sev_quote" }
 serde = { workspace = true }
 sgx_quote = { path = "../sgx_quote" }
@@ -19,4 +19,4 @@ tdx_quote = { path = "../tdx_quote" }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-env_logger = "0.10"
+env_logger = "0.11"

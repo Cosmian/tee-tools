@@ -47,7 +47,7 @@ pub(crate) fn verify_revocation_list(chain: &Chain, crl: &[u8]) -> Result<(), Er
     }
 
     // Verify VCEK is not revoked
-    let vcek = &chain.vcek.to_der()?;
+    let vcek = &chain.vek.to_der()?;
     let (_, cert) = X509Certificate::from_der(vcek)?;
 
     let is_revoked = crl
@@ -67,7 +67,7 @@ pub(crate) fn verify_revocation_list(chain: &Chain, crl: &[u8]) -> Result<(), Er
 pub(crate) fn verify_chain_certificates(cert_chain: &Chain) -> Result<(), Error> {
     let ark = &cert_chain.ca.ark;
     let ask = &cert_chain.ca.ask;
-    let vcek = &cert_chain.vcek;
+    let vcek = &cert_chain.vek;
 
     if (ark, ark).verify().is_err() {
         return Err(Error::VerificationFailure(
