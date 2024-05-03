@@ -11,7 +11,7 @@ name = "tee_attestation"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-azure_sev_quote = { path = "../azure_sev_quote" }
+azure_cvm = { path = "../azure_cvm" }
 serde = { workspace = true }
 sev_quote = { path = "../sev_quote" }
 sgx_quote = { path = "../sgx_quote" }

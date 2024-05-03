@@ -234,6 +234,7 @@ fn parse_extensions<'a>(
 #[allow(dead_code)]
 trait OptionOfTryFromExtensionValue {
     fn parse_and_save(&mut self, value: ExtensionValue<'_>) -> Result<(), SgxPckExtensionError>;
+    #[allow(dead_code)]
     fn is_none(&self) -> bool;
 }
 

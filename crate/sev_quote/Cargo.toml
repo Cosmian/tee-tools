@@ -19,7 +19,7 @@ log = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde-hex = { workspace = true }
-sev = { git = "https://github.com/virtee/sev", rev = "6a176a5f6068d30ac629fe59c13634a55076e7ae", features = [ # TODO: update after releasing
+sev = { workspace = true, features = [
     "snp",
     "openssl",
     "sev",

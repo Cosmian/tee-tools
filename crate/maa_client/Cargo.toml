@@ -6,7 +6,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-base64 = "0.21"
+base64 = { workspace = true }
 hex = { workspace = true }
 jose-jwk = { version = "0.1", features = ["rsa"] }
 jose-jws = "0.1"
