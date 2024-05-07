@@ -25,6 +25,7 @@ impl TryFrom<&[u8]> for TpmPolicy {
 }
 
 impl TpmPolicy {
+    #[must_use]
     pub fn new() -> Self {
         TpmPolicy {
             ..Default::default()

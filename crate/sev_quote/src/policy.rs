@@ -52,6 +52,7 @@ impl From<&Quote> for SevQuoteVerificationPolicy {
 }
 
 impl SevQuoteVerificationPolicy {
+    #[must_use]
     pub fn new(measurement: [u8; 48]) -> Self {
         SevQuoteVerificationPolicy {
             measurement: Some(measurement),

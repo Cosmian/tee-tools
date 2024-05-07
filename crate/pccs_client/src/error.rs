@@ -4,7 +4,7 @@ use thiserror::Error;
 pub enum Error {
     #[error("RequestError: {0}")]
     RequestError(#[from] reqwest::Error),
-    #[error("PccsReponseError: {0}")]
+    #[error("PccsResponseError: {0}")]
     PccsResponseError(String),
     #[error("UnexpectedError: {0}")]
     UnexpectedError(String),

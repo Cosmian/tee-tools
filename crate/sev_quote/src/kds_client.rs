@@ -49,7 +49,7 @@ pub(crate) fn fetch_revocation_list(
         StatusCode::BAD_GATEWAY => Err(Error::ResponseAPIError(
             "Unable to retrieve the collateral from the AMD KDS API".to_owned(),
         )),
-        s => Err(Error::ResponseAPIError(format!("HTTP status code {}", s))),
+        s => Err(Error::ResponseAPIError(format!("HTTP status code {s}"))),
     }
 }
 
@@ -92,7 +92,7 @@ fn fetch_amd_cert_chain(full_url: &str) -> Result<Vec<u8>, Error> {
         StatusCode::BAD_GATEWAY => Err(Error::ResponseAPIError(
             "Unable to retrieve the collateral from the AMD KDS API".to_owned(),
         )),
-        s => Err(Error::ResponseAPIError(format!("HTTP status code {}", s))),
+        s => Err(Error::ResponseAPIError(format!("HTTP status code {s}"))),
     }
 }
 
@@ -126,6 +126,6 @@ pub(crate) fn fetch_vcek(
         StatusCode::BAD_GATEWAY => Err(Error::ResponseAPIError(
             "Unable to retrieve the collateral from the AMD KDS API".to_owned(),
         )),
-        s => Err(Error::ResponseAPIError(format!("HTTP status code {}", s))),
+        s => Err(Error::ResponseAPIError(format!("HTTP status code {s}"))),
     }
 }

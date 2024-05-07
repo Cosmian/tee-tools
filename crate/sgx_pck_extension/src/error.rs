@@ -17,6 +17,6 @@ impl fmt::Display for SgxPckExtensionError {
             Self::SgxPckExtensionNotFoundError => "SGX PCK extension not found",
             Self::SgxPckParsingError => "SGX PCK parsing failed",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }

@@ -115,7 +115,7 @@ struct TcbInfoDataRaw {
 /// Verify all the collaterals:
 /// - TCB
 /// - PCK cert chains
-/// - QEIdentity
+/// - `QEIdentity`
 pub fn verify_collaterals(
     certification_data: &[u8],
     qe_report: &ReportBody,
@@ -655,7 +655,7 @@ fn verify_qe_identity(
                     x509_parser::extensions::DistributionPointName::FullName(names) => {
                         for name in names {
                             if let GeneralName::URI(uri) = name {
-                                crl_distribution_points.push(uri.to_string())
+                                crl_distribution_points.push((*uri).to_string());
                             } else {
                                 return Err(Error::Unimplemented(format!("Name format ({name}) not supported for CRL distribution point")))
                             }

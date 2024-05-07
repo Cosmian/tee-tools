@@ -11,6 +11,7 @@ pub mod verify;
 
 pub const REPORT_DATA_SIZE: usize = 64;
 
+#[must_use]
 pub fn is_sev() -> bool {
     PathBuf::from("/dev/sev-guest").exists()
 }

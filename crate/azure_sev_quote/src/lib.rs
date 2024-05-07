@@ -9,7 +9,7 @@ use crate::error::Error;
 
 pub mod error;
 
-const AZURE_QUOTE_NVINDEX: u32 = 0x1400001;
+const AZURE_QUOTE_NVINDEX: u32 = 0x0140_0001;
 const AZURE_QUOTE_START_OFFSET: usize = 32;
 const SEV_QUOTE_SIZE: usize = 1184;
 

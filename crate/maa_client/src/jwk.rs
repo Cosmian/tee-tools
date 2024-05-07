@@ -147,6 +147,7 @@ impl MaaJwks {
     /// # Returns
     ///
     /// [`Some(MaaJwk)`] if success, [`None`] otherwise.
+    #[must_use]
     pub fn find(self, kid: &str) -> Option<MaaJwk> {
         self.keys.into_iter().find(|key| key.kid == kid)
     }

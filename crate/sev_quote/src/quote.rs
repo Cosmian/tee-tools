@@ -14,7 +14,10 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use sev::{
     certs::snp::Verifiable,
-    firmware::{guest::*, host::CertTableEntry},
+    firmware::{
+        guest::{AttestationReport, Firmware},
+        host::CertTableEntry,
+    },
 };
 
 use sev::{
@@ -29,7 +32,7 @@ use x509_parser::{self, pem::parse_x509_pem};
 use crate::REPORT_DATA_SIZE;
 
 const AWS_VLEK_TYPE: Uuid = Uuid::from_fields(
-    0xa8074bc2,
+    0xa807_4bc2,
     0xa25a,
     0x483e,
     &[0xaa, 0xe6, 0x39, 0xc0, 0x45, 0xa0, 0xb8, 0xa1],
@@ -54,24 +57,23 @@ impl From<(AttestationReport, Vec<CertTableEntry>)> for Quote {
     }
 }
 
-/// Parse the raw quote into an AttestationReport
+/// Parse the raw quote into an `AttestationReport`
 pub fn parse_quote(raw_quote: &[u8]) -> Result<Quote, Error> {
     let quote = bincode::deserialize(raw_quote)
         .map_err(|_| Error::InvalidFormat("Can't deserialize the SEV report bytes".to_owned()));
 
-    match quote {
-        Ok(quote) => Ok(quote),
-        Err(_) => {
-            // SEV quote only contains the attestation report without certs
-            let quote: AttestationReport = bincode::deserialize(raw_quote).map_err(|_| {
-                Error::InvalidFormat("Can't deserialize the SEV report bytes".to_owned())
-            })?;
+    if let Ok(quote) = quote {
+        Ok(quote)
+    } else {
+        // SEV quote only contains the attestation report without certs
+        let quote: AttestationReport = bincode::deserialize(raw_quote).map_err(|_| {
+            Error::InvalidFormat("Can't deserialize the SEV report bytes".to_owned())
+        })?;
 
-            Ok(Quote {
-                report: quote,
-                certs: vec![],
-            })
-        }
+        Ok(Quote {
+            report: quote,
+            certs: vec![],
+        })
     }
 }
 
