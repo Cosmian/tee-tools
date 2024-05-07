@@ -17,6 +17,6 @@ Also, install `libssl-dev`.
 Then:
 
 ```console
-$ cargo build
-$ cargo test -- --nocapture
+cargo build
+cargo test -- --nocapture
 ```

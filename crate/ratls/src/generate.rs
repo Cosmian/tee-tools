@@ -58,7 +58,7 @@ impl RatlsKeyGenerationType {
     }
 }
 
-/// Generate the RATLS X509 extension containg the quote
+/// Generate the RATLS X509 extension containing the quote
 ///
 /// The quote report data contains the sha256 of the certificate public key
 /// and some 32 arbitrary extra bytes.
@@ -145,7 +145,7 @@ pub fn generate_ratls_cert(
             .map(|san| match san.parse::<Ipv4Addr>() {
                 Ok(ip) => GeneralName::from(IpAddr::V4(ip)),
                 Err(_) => GeneralName::DnsName(
-                    Ia5String::try_from(san.to_string())
+                    Ia5String::try_from((*san).to_string())
                         .expect("SAN contains non-ascii characters"),
                 ),
             })

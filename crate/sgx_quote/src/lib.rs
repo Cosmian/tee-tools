@@ -14,6 +14,7 @@ pub const MRSIGNER_SIZE: usize = 32;
 pub(crate) const SGX_GUEST_PATH: &str = "/dev/attestation/quote";
 
 /// Test whether the current environment is under SGX
+#[must_use]
 pub fn is_sgx() -> bool {
     PathBuf::from(SGX_GUEST_PATH).exists()
 }

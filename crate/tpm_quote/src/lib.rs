@@ -31,6 +31,7 @@ pub enum PcrHashMethod {
 }
 
 impl PcrHashMethod {
+    #[must_use]
     pub fn size(&self) -> usize {
         match self {
             PcrHashMethod::Sha1 => 20,
@@ -57,7 +58,7 @@ pub fn get_quote(
 ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), Error> {
     let pcr_list = pcr_list
         .iter()
-        .map(|n| (1 << (*n as u32)).try_into())
+        .map(|n| (1 << u32::from(*n)).try_into())
         .collect::<Result<Vec<PcrSlot>, _>>()?;
 
     let pcr_selection_list = PcrSelectionListBuilder::new()
@@ -154,7 +155,7 @@ pub(crate) fn verify_quote_policy(
     Ok(())
 }
 
-/// Verify the digest of the pcr_value.
+/// Verify the digest of the `pcr_value`.
 ///
 /// # Returns
 ///

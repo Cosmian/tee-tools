@@ -40,8 +40,8 @@ pub fn forge_report_data(
 /// Verify the RATLS certificate.
 ///
 /// The verification includes:
-/// - The MRenclave
-/// - The MRsigner
+/// - The `MRenclave`
+/// - The `MRsigner`
 /// - The report data content
 /// - The quote collaterals
 pub fn verify_ratls(pem_ratls_cert: &[u8], policy: Option<&mut TeePolicy>) -> Result<(), Error> {

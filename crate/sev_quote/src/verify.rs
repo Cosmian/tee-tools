@@ -9,7 +9,7 @@ use crate::{
 use asn1_rs::{FromDer, Oid};
 use log::debug;
 use sev::certs::snp::{ca, Chain};
-use sev::{certs::snp::Verifiable, firmware::guest::*};
+use sev::{certs::snp::Verifiable, firmware::guest::AttestationReport};
 use x509_parser::{
     self,
     certificate::X509Certificate,

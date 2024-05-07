@@ -1,8 +1,9 @@
 [package]
 name = "ratls"
-version = "0.2.0"
-edition = "2021"
-license = "MIT/Apache-2.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "Intel SGX/AMD SEV verification of Remote Attestation based TLS certificate"
 
 [dependencies]
@@ -11,9 +12,9 @@ der = { workspace = true }
 ecdsa = { workspace = true }
 p256 = { workspace = true }
 rand_chacha = { workspace = true }
-tee_attestation = { path = "../tee_attestation" }
 sha2 = { workspace = true }
 spki = { workspace = true }
+tee_attestation = { path = "../tee_attestation" }
 thiserror = { workspace = true }
 x509-cert = { workspace = true }
 x509-parser = { workspace = true }

@@ -5,7 +5,7 @@ use thiserror::Error;
 pub enum Error {
     #[error("RequestError: {0}")]
     RequestError(#[from] reqwest::Error),
-    #[error("MaaReponseError: {0}")]
+    #[error("MaaResponseError: {0}")]
     MaaResponseError(String),
     #[error("UnexpectedError: {0}")]
     UnexpectedError(String),

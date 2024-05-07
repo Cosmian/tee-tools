@@ -3,7 +3,7 @@ pub mod error;
 pub mod jwk;
 pub mod utils;
 
-use std::{ops::Deref, str::FromStr};
+use std::str::FromStr;
 
 use crate::{
     api::{maa_attest_sgx_enclave, maa_certificates},
@@ -119,7 +119,7 @@ pub fn verify_jws(token: &str, jwks: MaaJwks, nonce: Option<&[u8]>) -> Result<Sg
         return Err(Error::DecodeError("no header found in JWS".to_owned()));
     };
 
-    let Protected { oth, .. } = header.deref();
+    let Protected { oth, .. } = &**header;
     let Unprotected { kid, .. } = oth;
 
     let Some(expected_kid) = kid else {
@@ -148,7 +148,7 @@ pub fn verify_jws(token: &str, jwks: MaaJwks, nonce: Option<&[u8]>) -> Result<Sg
 ///
 /// * `maa_url` - Attestation instance base URI, for example https://mytenant.attest.azure.net.
 /// * `quote` - Raw SGX quote.
-/// * `enclave_held_data` - SHA-256(enclave_held_data) digest expected in REPORT_DATA of SGX quote.
+/// * `enclave_held_data` - SHA-256(enclave_held_data) digest expected in `REPORT_DATA` of SGX quote.
 /// * `mr_enclave` - Expected MRENCLAVE value in SGX quote.
 /// * `mr_signer` - Expected MRSIGNER value in SGX quote.
 ///

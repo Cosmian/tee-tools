@@ -1,8 +1,9 @@
 [package]
 name = "sgx_quote"
-version = "0.2.1"
-edition = "2021"
-license = "MIT/Apache-2.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "Intel SGX quote parsing and verification"
 
 [lib]
@@ -15,12 +16,12 @@ hex = { workspace = true }
 hkdf = { workspace = true }
 log = { workspace = true }
 p256 = { workspace = true }
-rsa = { workspace = true }
 pccs_client = { path = "../pccs_client" }
+rsa = { workspace = true }
 scroll = { version = "0.11", features = ["derive"] }
 serde = { workspace = true }
-serde_json = { workspace = true }
 serde-hex = { workspace = true }
+serde_json = { workspace = true }
 sgx_pck_extension = { path = "../sgx_pck_extension" }
 sha2 = { workspace = true }
 thiserror = { workspace = true }

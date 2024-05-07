@@ -75,7 +75,7 @@ impl TeePolicy {
     }
 }
 
-/// Build a TeePolicy from a given raw tee quote
+/// Build a `TeePolicy` from a given raw tee quote
 impl TryFrom<&[u8]> for TeePolicy {
     type Error = Error;
 
@@ -116,6 +116,7 @@ pub fn guess_tee() -> Result<TeeType, Error> {
 }
 
 /// Tell whether the current platform is a tee
+#[must_use]
 pub fn is_running_inside_tee() -> bool {
     guess_tee().is_ok()
 }
@@ -158,8 +159,8 @@ pub fn get_quote(report_data: Option<&[u8]>) -> Result<Vec<u8>, Error> {
         vec![0u8; REPORT_DATA_SIZE]
     };
 
-    match guess_tee() {
-        Ok(tee) => match tee {
+    if let Ok(tee) = guess_tee() {
+        match tee {
             TeeType::Sev => Ok(sev_quote::quote::get_quote(
                 &report_data
                     .try_into()
@@ -175,18 +176,17 @@ pub fn get_quote(report_data: Option<&[u8]>) -> Result<Vec<u8>, Error> {
                     .try_into()
                     .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
             )?),
-        },
-        Err(_) => {
-            // No low-level access to the device on Microsoft Azure!
-            // SEV quote is stored in the vTPM at boot time
-            if let Ok(raw_quote) = azure_sev_quote::get_quote_from_tpm() {
-                if sev_quote::quote::parse_quote(&raw_quote).is_ok() {
-                    return Ok(raw_quote);
-                }
-            }
-
-            Err(Error::UnsupportedTeeError)
         }
+    } else {
+        // No low-level access to the device on Microsoft Azure!
+        // SEV quote is stored in the vTPM at boot time
+        if let Ok(raw_quote) = azure_sev_quote::get_quote_from_tpm() {
+            if sev_quote::quote::parse_quote(&raw_quote).is_ok() {
+                return Ok(raw_quote);
+            }
+        }
+
+        Err(Error::UnsupportedTeeError)
     }
 }
 
@@ -241,8 +241,7 @@ pub fn verify_quote(raw_quote: &[u8], policy: Option<&TeePolicy>) -> Result<(), 
             Ok(tdx_quote::quote::verify_quote(raw_quote, p)?)
         }
         (_, _) => Err(Error::VerificationFailure(format!(
-            "Bad policy type provided for this quote: {:?}",
-            quote
+            "Bad policy type provided for this quote: {quote:?}"
         ))),
     }
 }

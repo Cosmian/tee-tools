@@ -1,8 +1,9 @@
 [package]
 name = "sev_quote"
-version = "0.2.0"
-edition = "2021"
-license = "MIT/Apache-2.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "AMD SEV quote parsing and verification"
 
 [lib]

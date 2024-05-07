@@ -8,8 +8,8 @@ use tss_esapi::{
     Context,
 };
 
-pub const TPM_EK_NVINDEX: u32 = 0x81000050;
-pub const TPM_AK_NVINDEX: u32 = 0x81000051;
+pub const TPM_EK_NVINDEX: u32 = 0x8100_0050;
+pub const TPM_AK_NVINDEX: u32 = 0x8100_0051;
 
 pub(crate) fn get_key_from_persistent_handle(
     context: &mut Context,

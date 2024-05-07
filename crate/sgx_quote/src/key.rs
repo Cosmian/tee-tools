@@ -5,7 +5,7 @@ use hkdf::Hkdf;
 
 use sha2::Sha256;
 
-/// Generate a key derived from the mr_enclave
+/// Generate a key derived from the `mr_enclave`
 pub fn get_key(salt: Option<&[u8]>) -> Result<Vec<u8>, Error> {
     let mut file = fs::File::open("/dev/attestation/keys/_sgx_mrenclave")?;
     let mut buf = [0; 16];

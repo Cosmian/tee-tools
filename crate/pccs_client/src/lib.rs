@@ -28,6 +28,7 @@ pub enum IntelTeeType {
 }
 
 impl IntelTeeType {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             IntelTeeType::Sgx => "sgx",
@@ -64,7 +65,7 @@ pub fn get_root_ca_crl(pccs_url: &str) -> Result<Vec<u8>, Error> {
         StatusCode::BAD_GATEWAY => Err(Error::PccsResponseError(
             "Unable to retrieve the collateral from the Intel PCS API".to_owned(),
         )),
-        s => Err(Error::UnexpectedError(format!("HTTP status code {}", s))),
+        s => Err(Error::UnexpectedError(format!("HTTP status code {s}"))),
     }?;
 
     let root_ca_crl = hex::decode(body).map_err(|e| Error::DecodeError(e.to_string()))?;
@@ -93,7 +94,7 @@ pub fn get_root_ca_crl_from_uri(uri: &str) -> Result<Vec<u8>, Error> {
         StatusCode::BAD_GATEWAY => Err(Error::PccsResponseError(
             "Unable to retrieve the collateral from the Intel PCS API".to_owned(),
         )),
-        s => Err(Error::UnexpectedError(format!("HTTP status code {}", s))),
+        s => Err(Error::UnexpectedError(format!("HTTP status code {s}"))),
     }
 }
 
@@ -153,7 +154,7 @@ pub fn get_pck_crl(pccs_url: &str, ca: PckCa) -> Result<(Vec<u8>, Vec<u8>), Erro
         StatusCode::BAD_GATEWAY => Err(Error::PccsResponseError(
             "Unable to retrieve the collateral from the Intel PCS API".to_owned(),
         )),
-        s => Err(Error::UnexpectedError(format!("HTTP status code {}", s))),
+        s => Err(Error::UnexpectedError(format!("HTTP status code {s}"))),
     }?;
 
     Ok((pck_crl_issuer_chain, body))
@@ -214,7 +215,7 @@ pub fn get_tcbinfo(
         StatusCode::BAD_GATEWAY => Err(Error::PccsResponseError(
             "Unable to retrieve the collateral from the Intel PCS API".to_owned(),
         )),
-        s => Err(Error::UnexpectedError(format!("HTTP status code {}", s))),
+        s => Err(Error::UnexpectedError(format!("HTTP status code {s}"))),
     }?;
 
     Ok((tcb_info_issuer_chain, body))
@@ -276,7 +277,7 @@ pub fn get_qe_identity(pccs_url: &str, tee: IntelTeeType) -> Result<(Vec<u8>, Ve
         StatusCode::BAD_GATEWAY => Err(Error::PccsResponseError(
             "Unable to retrieve the collateral from the Intel PCS API".to_owned(),
         )),
-        s => Err(Error::UnexpectedError(format!("HTTP status code {}", s))),
+        s => Err(Error::UnexpectedError(format!("HTTP status code {s}"))),
     }?;
 
     Ok((qe_identity_issuer_chain, body))

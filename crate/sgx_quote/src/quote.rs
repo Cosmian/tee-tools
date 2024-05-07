@@ -222,8 +222,8 @@ pub fn get_quote(user_report_data: &[u8; REPORT_DATA_SIZE]) -> Result<Vec<u8>, E
 /// Verify the quote
 ///
 /// The verification includes:
-/// - The MRenclave
-/// - The MRsigner
+/// - The `MRenclave`
+/// - The `MRsigner`
 /// - The quote collaterals
 pub fn verify_quote(raw_quote: &[u8], policy: &SgxQuoteVerificationPolicy) -> Result<(), Error> {
     let (quote, signature, auth_data, certs) = parse_quote(raw_quote)?;

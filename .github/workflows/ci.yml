@@ -3,6 +3,13 @@ on: [push]
 name: Continuous integration
 
 jobs:
+  cargo-deny:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: EmbarkStudios/cargo-deny-action@v1
+
   check:
     name: Check
     runs-on: ${{ matrix.env }}
@@ -59,7 +66,7 @@ jobs:
       - name: Machete (deps checker)
         uses: actions-rs/cargo@v1
         with:
-            command: machete
+          command: machete
 
       - name: Cargo test
         uses: actions-rs/cargo@v1

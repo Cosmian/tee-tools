@@ -137,7 +137,7 @@ impl SgxPckExtension {
                     .map_err(|_| SgxPckExtensionError::SgxPckParsingError),
                 Ok(None) => Err(SgxPckExtensionError::SgxPckExtensionNotFoundError),
                 Err(e) => {
-                    panic!("Failed to get X509 extension: {:?}", e)
+                    panic!("Failed to get X509 extension: {e:?}")
                 }
             },
             Err(_) => Err(SgxPckExtensionError::SgxPckParsingError),
@@ -231,6 +231,7 @@ fn parse_extensions<'a>(
 /// "[DSTs Are Just Polymorphically Compiled Generics][dsts]".)
 ///
 /// [dsts]: https://gankra.github.io/blah/dsts-are-polymorphic-generics/
+#[allow(dead_code)]
 trait OptionOfTryFromExtensionValue {
     fn parse_and_save(&mut self, value: ExtensionValue<'_>) -> Result<(), SgxPckExtensionError>;
     fn is_none(&self) -> bool;
