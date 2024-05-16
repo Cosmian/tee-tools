@@ -10,7 +10,7 @@ base64 = "0.21"
 hex = { workspace = true }
 jose-jwk = { version = "0.1", features = ["rsa"] }
 jose-jws = "0.1"
-jwt-simple = "0.12"
+jwt-simple = { version = "0.12.9", default-features = false, features = ["pure-rust"] }
 reqwest = { workspace = true }
 rsa = "0.9"
 serde = { version = "1.0", features = ["derive"] }

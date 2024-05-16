@@ -4,7 +4,7 @@ members = [
     "crate/azure_sev_quote",
     "crate/maa_client",
     "crate/pccs_client",
-    "crate/ratls",
+    # "crate/ratls",
     "crate/sev_quote",
     "crate/sgx_quote",
     "crate/sgx_pck_extension",
