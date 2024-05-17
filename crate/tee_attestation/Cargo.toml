@@ -10,8 +10,14 @@ description = "TEE attestation report parsing and verification"
 name = "tee_attestation"
 crate-type = ["cdylib", "rlib"]
 
+[[bin]]
+name = "get_hw_evidence"
+path = "src/main.rs"
+
 [dependencies]
-azure_sev_quote = { path = "../azure_sev_quote" }
+azure_cvm = { path = "../azure_cvm" }
+hex = { workspace = true }
+maa_client = { path = "../maa_client" }
 serde = { workspace = true }
 sev_quote = { path = "../sev_quote" }
 sgx_quote = { path = "../sgx_quote" }

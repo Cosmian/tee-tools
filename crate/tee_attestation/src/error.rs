@@ -2,8 +2,12 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
+    #[error(transparent)]
+    AzureCvmError(#[from] azure_cvm::error::Error),
     #[error("{0}")]
     InvalidFormat(String),
+    #[error(transparent)]
+    MaaClientError(#[from] maa_client::error::Error),
     #[error(transparent)]
     SEVQuoteError(#[from] sev_quote::error::Error),
     #[error(transparent)]

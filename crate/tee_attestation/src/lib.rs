@@ -22,16 +22,20 @@ pub const REPORT_DATA_SIZE: usize = 64;
 
 #[derive(Debug)]
 pub enum TeeType {
-    Sgx,
+    AzSev,
+    AzTdx,
     Sev,
+    Sgx,
     Tdx,
 }
 
 impl std::fmt::Display for TeeType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match *self {
-            TeeType::Sgx => write!(f, "SGX"),
+            TeeType::AzSev => write!(f, "Azure SEV"),
+            TeeType::AzTdx => write!(f, "Azure TDX"),
             TeeType::Sev => write!(f, "SEV"),
+            TeeType::Sgx => write!(f, "SGX"),
             TeeType::Tdx => write!(f, "TDX"),
         }
     }
@@ -112,6 +116,13 @@ pub fn guess_tee() -> Result<TeeType, Error> {
         return Ok(TeeType::Sgx);
     }
 
+    if let Some(report_type) = azure_cvm::is_az_cvm() {
+        match report_type {
+            azure_cvm::ReportType::Snp => return Ok(TeeType::AzSev),
+            azure_cvm::ReportType::Tdx => return Ok(TeeType::AzTdx),
+        }
+    }
+
     Err(Error::UnsupportedTeeError)
 }
 
@@ -161,33 +172,58 @@ pub fn get_quote(report_data: Option<&[u8]>) -> Result<Vec<u8>, Error> {
 
     if let Ok(tee) = guess_tee() {
         match tee {
-            TeeType::Sev => Ok(sev_quote::quote::get_quote(
-                &report_data
-                    .try_into()
-                    .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
-            )?),
-            TeeType::Sgx => Ok(sgx_quote::quote::get_quote(
-                &report_data
-                    .try_into()
-                    .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
-            )?),
-            TeeType::Tdx => Ok(tdx_quote::quote::get_quote(
-                &report_data
-                    .try_into()
-                    .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
-            )?),
-        }
-    } else {
-        // No low-level access to the device on Microsoft Azure!
-        // SEV quote is stored in the vTPM at boot time
-        if let Ok(raw_quote) = azure_sev_quote::get_quote_from_tpm() {
-            if sev_quote::quote::parse_quote(&raw_quote).is_ok() {
-                return Ok(raw_quote);
+            TeeType::Sev => {
+                return Ok(sev_quote::quote::get_quote(
+                    &report_data
+                        .try_into()
+                        .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
+                )?)
+            }
+            TeeType::Sgx => {
+                return Ok(sgx_quote::quote::get_quote(
+                    &report_data
+                        .try_into()
+                        .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
+                )?)
+            }
+            TeeType::Tdx => {
+                return Ok(tdx_quote::quote::get_quote(
+                    &report_data
+                        .try_into()
+                        .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
+                )?)
+            }
+            TeeType::AzSev | TeeType::AzTdx => {
+                // No low-level access to the device on Microsoft Azure!
+                // SEV or TDX quote is stored in the vTPM at boot time
+                if let Ok(raw_hcl_report) = azure_cvm::tpm::get_hcl_report() {
+                    let hcl_report = azure_cvm::HclReport::new(raw_hcl_report)?;
+
+                    match hcl_report.report_type() {
+                        azure_cvm::ReportType::Snp => {
+                            let mut snp_report = hcl_report.report_slice().to_vec();
+                            let amd_cert_chain = azure_cvm::imds::get_amd_cert_chain()?;
+                            snp_report.extend(amd_cert_chain);
+                            return Ok(snp_report);
+                        }
+                        azure_cvm::ReportType::Tdx => {
+                            let td_report: azure_cvm::attestation_report::TdReport =
+                                hcl_report.try_into().map_err(|_| {
+                                    Error::InvalidFormat(
+                                        "failed to parse Intel TD report".to_owned(),
+                                    )
+                                })?;
+                            return Ok(azure_cvm::imds::get_td_quote(&td_report)?);
+                        }
+                    }
+                } else {
+                    return Err(Error::UnsupportedTeeError);
+                }
             }
         }
-
-        Err(Error::UnsupportedTeeError)
     }
+
+    Err(Error::UnsupportedTeeError)
 }
 
 fn pad_report_data(report_data: &[u8], length: usize) -> Result<Vec<u8>, Error> {
@@ -200,6 +236,50 @@ fn pad_report_data(report_data: &[u8], length: usize) -> Result<Vec<u8>, Error> 
     let mut inner_user_report_data = vec![0u8; length];
     inner_user_report_data[0..report_data.len()].copy_from_slice(report_data);
     Ok(inner_user_report_data)
+}
+
+pub fn az_verify_quote(raw_quote: &[u8], policy: &TeePolicy) -> Result<(), Error> {
+    let maa_url: &str = "https://sharedweu.weu.attest.azure.net";
+
+    match policy {
+        TeePolicy::Sev(p) => {
+            let report = &raw_quote[0..azure_cvm::SNP_REPORT_SIZE];
+            let amd_cert_chain = maa_client::utils::parse_certificate_chain(raw_quote).join("");
+            let sev_claim =
+                maa_client::verify_sev_quote(maa_url, report, amd_cert_chain.as_bytes())?;
+
+            if let Some(expected_report_data) = p.report_data {
+                let report_data =
+                    hex::decode(sev_claim.x_ms_sevsnpvm_reportdata).map_err(|_| {
+                        Error::InvalidFormat(
+                            "failed to decode hex value from MAA response".to_owned(),
+                        )
+                    })?;
+                if expected_report_data != *report_data {
+                    return Err(Error::VerificationFailure(
+                        "REPORT_DATA doesn't match policy".to_owned(),
+                    ));
+                }
+            }
+
+            Ok(())
+        }
+        TeePolicy::Sgx(_) => Err(Error::UnsupportedTeeError),
+        TeePolicy::Tdx(p) => {
+            let tdx_claim = maa_client::verify_tdx_quote(maa_url, raw_quote)?;
+            if let Some(expected_report_data) = p.body.report_data {
+                let report_data = hex::decode(tdx_claim.tdx_report_data).map_err(|_| {
+                    Error::InvalidFormat("failed to decode hex value from MAA response".to_owned())
+                })?;
+                if expected_report_data != *report_data {
+                    return Err(Error::VerificationFailure(
+                        "REPORT_DATA doesn't match policy".to_owned(),
+                    ));
+                }
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Verify a quote
@@ -252,6 +332,6 @@ pub fn get_key(salt: Option<&[u8]>) -> Result<Vec<u8>, Error> {
     match guess_tee()? {
         TeeType::Sgx => Ok(sgx_quote::key::get_key(salt)?),
         TeeType::Sev => Ok(sev_quote::key::get_key(salt)?),
-        TeeType::Tdx => Err(Error::UnsupportedTeeError),
+        TeeType::Tdx | TeeType::AzSev | TeeType::AzTdx => Err(Error::UnsupportedTeeError),
     }
 }

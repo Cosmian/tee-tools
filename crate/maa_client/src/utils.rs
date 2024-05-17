@@ -15,3 +15,11 @@ pub mod base64url_serde {
             .map_err(serde::de::Error::custom)
     }
 }
+
+pub fn parse_certificate_chain(bytes: &[u8]) -> Vec<String> {
+    pem::parse_many(bytes)
+        .unwrap()
+        .iter()
+        .map(pem::encode)
+        .collect::<Vec<_>>()
+}
