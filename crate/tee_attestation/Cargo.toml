@@ -16,6 +16,8 @@ path = "src/main.rs"
 
 [dependencies]
 azure_cvm = { path = "../azure_cvm" }
+hex = { workspace = true }
+maa_client = { path = "../maa_client" }
 serde = { workspace = true }
 sev_quote = { path = "../sev_quote" }
 sgx_quote = { path = "../sgx_quote" }

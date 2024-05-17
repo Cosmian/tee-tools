@@ -235,6 +235,50 @@ fn pad_report_data(report_data: &[u8], length: usize) -> Result<Vec<u8>, Error> 
     Ok(inner_user_report_data)
 }
 
+pub fn az_verify_quote(raw_quote: &[u8], policy: &TeePolicy) -> Result<(), Error> {
+    let maa_url: &str = "https://sharedweu.weu.attest.azure.net";
+
+    match policy {
+        TeePolicy::Sev(p) => {
+            let report = &raw_quote[0..azure_cvm::SNP_REPORT_SIZE];
+            let amd_cert_chain = maa_client::utils::parse_certificate_chain(raw_quote).join("");
+            let sev_claim =
+                maa_client::verify_sev_quote(maa_url, report, amd_cert_chain.as_bytes())?;
+
+            if let Some(expected_report_data) = p.report_data {
+                let report_data =
+                    hex::decode(sev_claim.x_ms_sevsnpvm_reportdata).map_err(|_| {
+                        Error::InvalidFormat(
+                            "failed to decode hex value from MAA response".to_owned(),
+                        )
+                    })?;
+                if expected_report_data != *report_data {
+                    return Err(Error::VerificationFailure(
+                        "REPORT_DATA doesn't match policy".to_owned(),
+                    ));
+                }
+            }
+
+            Ok(())
+        }
+        TeePolicy::Sgx(_) => Err(Error::UnsupportedTeeError),
+        TeePolicy::Tdx(p) => {
+            let tdx_claim = maa_client::verify_tdx_quote(maa_url, raw_quote)?;
+            if let Some(expected_report_data) = p.body.report_data {
+                let report_data = hex::decode(tdx_claim.tdx_report_data).map_err(|_| {
+                    Error::InvalidFormat("failed to decode hex value from MAA response".to_owned())
+                })?;
+                if expected_report_data != *report_data {
+                    return Err(Error::VerificationFailure(
+                        "REPORT_DATA doesn't match policy".to_owned(),
+                    ));
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
 /// Verify a quote
 pub fn verify_quote(raw_quote: &[u8], policy: Option<&TeePolicy>) -> Result<(), Error> {
     let quote = parse_quote(raw_quote)?;

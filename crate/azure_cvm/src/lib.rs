@@ -19,8 +19,8 @@ pub mod imds;
 pub mod tpm;
 
 const HCL_AKPUB_KEY_ID: &str = "HCLAkPub";
-const TD_REPORT_SIZE: usize = std::mem::size_of::<TdReport>();
-const SNP_REPORT_SIZE: usize = std::mem::size_of::<SnpReport>();
+pub const TD_REPORT_SIZE: usize = std::mem::size_of::<TdReport>();
+pub const SNP_REPORT_SIZE: usize = std::mem::size_of::<SnpReport>();
 const MAX_REPORT_SIZE: usize = SNP_REPORT_SIZE; // 1184 bytes for SEV-SNP and 1024 bytes for TDX
 const SNP_REPORT_TYPE: u32 = 2;
 const TDX_REPORT_TYPE: u32 = 4;

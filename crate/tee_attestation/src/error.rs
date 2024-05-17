@@ -7,6 +7,8 @@ pub enum Error {
     #[error("{0}")]
     InvalidFormat(String),
     #[error(transparent)]
+    MaaClientError(#[from] maa_client::error::Error),
+    #[error(transparent)]
     SEVQuoteError(#[from] sev_quote::error::Error),
     #[error(transparent)]
     SGXQuoteError(#[from] sgx_quote::error::Error),
