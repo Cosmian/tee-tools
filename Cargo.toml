@@ -21,7 +21,7 @@ license-file = "LICENSE"
 repository = "https://github.com/Cosmian/tee-tools"
 
 [workspace.dependencies]
-base64 = "0.21"
+base64 = "0.22"
 asn1-rs = "0.5"
 asn1 = "0.15"
 bincode = "1.3"
