@@ -3,13 +3,6 @@ on: [push]
 name: Continuous integration
 
 jobs:
-  cargo-deny:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: EmbarkStudios/cargo-deny-action@v1
-
   check:
     name: Check
     runs-on: ${{ matrix.env }}
@@ -28,12 +21,12 @@ jobs:
           - env: "sgx"
             docker-opt: "--device /dev/sgx_enclave --device /dev/sgx_provision"
     container:
-      image: ghcr.io/cosmian/intel-sgx:2.23 # We work in a container because we need root access for some tests (get quote for example)
+      image: ghcr.io/cosmian/intel-sgx:2.24 # We work in a container because we need root access for some tests (get quote for example)
       options: ${{ matrix.docker-opt }} # We need the device to get TPM, TDX or SEV quote
     steps:
       - name: Install dependencies
         run: |
-          apt-get update && apt-get install -y libssl-dev tpm2-tools libtss2-dev
+          apt-get update && apt-get install -y libssl-dev tpm2-tools libtss2-dev libtdx-attest-dev
 
       - uses: actions/checkout@v2
 
@@ -45,6 +38,9 @@ jobs:
           override: true
 
       - run: rustup component add rustfmt && rustup component add clippy && cargo install cargo-machete
+
+      - name: Security Audit
+        uses: EmbarkStudios/cargo-deny-action@v1
 
       - name: Cargo fmt
         uses: actions-rs/cargo@v1

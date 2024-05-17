@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 
 pub mod error;
-#[cfg(target_os = "linux")]
-mod generate;
 pub mod policy;
 pub mod quote;
 mod verify;

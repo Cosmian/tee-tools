@@ -21,6 +21,7 @@ serde = { workspace = true }
 serde-hex = { workspace = true }
 sgx_quote = { path = "../sgx_quote" }
 sha2 = { workspace = true }
+tdx-attest-rs = { git = "https://github.com/intel/SGXDataCenterAttestationPrimitives.git", tag = "DCAP_1.21" }
 thiserror = { workspace = true }
 
 [dev-dependencies]

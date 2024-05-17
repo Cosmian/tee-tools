@@ -1,4 +1,4 @@
-FROM ghcr.io/cosmian/intel-sgx:2.23
+FROM ghcr.io/cosmian/intel-sgx:2.24
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install --no-install-recommends -qq -y \
     python3-pip \
     tpm2-tools \
     libtss2-dev \
+    libtdx-attest-dev \
     && apt-get -y -q upgrade \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
