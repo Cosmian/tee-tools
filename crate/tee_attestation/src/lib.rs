@@ -201,7 +201,10 @@ pub fn get_quote(report_data: Option<&[u8]>) -> Result<Vec<u8>, Error> {
 
                     match hcl_report.report_type() {
                         azure_cvm::ReportType::Snp => {
-                            return Ok(hcl_report.report_slice().to_vec());
+                            let mut snp_report = hcl_report.report_slice().to_vec();
+                            let amd_cert_chain = azure_cvm::imds::get_amd_cert_chain()?;
+                            snp_report.extend(amd_cert_chain);
+                            return Ok(snp_report);
                         }
                         azure_cvm::ReportType::Tdx => {
                             let td_report: azure_cvm::attestation_report::TdReport =
