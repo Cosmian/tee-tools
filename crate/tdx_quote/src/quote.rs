@@ -14,6 +14,7 @@ use sgx_quote::{
     quote::{ReportBody, QUOTE_QE_REPORT_SIZE},
     verify::verify_collaterals,
 };
+use tdx_attest_rs::{tdx_att_get_quote, tdx_report_data_t, tdx_uuid_t};
 
 pub const QUOTE_HEADER_SIZE: usize = 48;
 pub const QUOTE_REPORT_BODY_SIZE: usize = 584;
@@ -348,8 +349,18 @@ pub fn parse_quote(raw_quote: &[u8]) -> Result<(Quote, EcdsaSigData), Error> {
 #[cfg(target_os = "linux")]
 /// Get the quote from the block device
 pub fn get_quote(user_report_data: &[u8; REPORT_DATA_SIZE]) -> Result<Vec<u8>, Error> {
-    use crate::generate::_get_quote;
-    _get_quote(user_report_data)
+    let mut report_data = [0u8; 64];
+    report_data.copy_from_slice(user_report_data);
+    let tdx_report_data = tdx_report_data_t { d: report_data };
+    let mut att_key_id = tdx_uuid_t { d: [0; 16usize] };
+    let (ret, quote) = tdx_att_get_quote(Some(&tdx_report_data), None, Some(&mut att_key_id), 0);
+    match quote {
+        None => Err(Error::DriverError(format!(
+            "failed to get Intel TD quote: {:?}",
+            ret
+        ))),
+        Some(q) => Ok(q),
+    }
 }
 
 /// Verify the quote
