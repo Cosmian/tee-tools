@@ -10,6 +10,10 @@ description = "TEE attestation report parsing and verification"
 name = "tee_attestation"
 crate-type = ["cdylib", "rlib"]
 
+[[bin]]
+name = "get_hw_evidence"
+path = "src/main.rs"
+
 [dependencies]
 azure_cvm = { path = "../azure_cvm" }
 serde = { workspace = true }

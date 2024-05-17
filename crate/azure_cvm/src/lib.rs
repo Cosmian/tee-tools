@@ -4,6 +4,7 @@
 use crate::{
     attestation_report::{SnpReport, TdReport},
     error::Error,
+    tpm::get_hcl_report,
 };
 use jose_jwk::Jwk;
 use serde::{Deserialize, Serialize};
@@ -201,6 +202,16 @@ impl TryFrom<HclReport> for SnpReport {
     fn try_from(hcl_report: HclReport) -> Result<Self, Self::Error> {
         (&hcl_report).try_into()
     }
+}
+
+pub fn is_az_cvm() -> Option<ReportType> {
+    if let Ok(raw_hcl_report) = get_hcl_report() {
+        if let Ok(hcl_report) = HclReport::new(raw_hcl_report) {
+            return Some(hcl_report.report_type());
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]

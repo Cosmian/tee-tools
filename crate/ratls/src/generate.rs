@@ -70,15 +70,17 @@ pub fn get_ratls_extension(
     let quote = get_quote(Some(&user_report_data))?;
 
     match guess_tee()? {
-        TeeType::Sev => Ok(RatlsExtension::AMDSevTee(AMDSevRatlsExtension::from(
+        TeeType::Sev | TeeType::AzSev => Ok(RatlsExtension::AMDSevTee(AMDSevRatlsExtension::from(
             OctetString::new(quote).map_err(|_| Error::UnsupportedTeeError)?,
         ))),
         TeeType::Sgx => Ok(RatlsExtension::IntelSgxTee(IntelSgxRatlsExtension::from(
             OctetString::new(quote).map_err(|_| Error::UnsupportedTeeError)?,
         ))),
-        TeeType::Tdx => Ok(RatlsExtension::IntelTdxTee(IntelTdxRatlsExtension::from(
-            OctetString::new(quote).map_err(|_| Error::UnsupportedTeeError)?,
-        ))),
+        TeeType::Tdx | TeeType::AzTdx => {
+            Ok(RatlsExtension::IntelTdxTee(IntelTdxRatlsExtension::from(
+                OctetString::new(quote).map_err(|_| Error::UnsupportedTeeError)?,
+            )))
+        }
     }
 }
 
