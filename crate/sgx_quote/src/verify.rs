@@ -124,7 +124,7 @@ pub fn verify_collaterals(
     qe_report_data: &[u8],
     signature_attest_pub_key: &[u8],
     auth_data: &[u8],
-    pccs_url: &str,
+    pcs_url: &str,
     tee_type: IntelTeeType,
 ) -> Result<(), Error> {
     debug!("Extracting certificate chain...");
@@ -149,10 +149,10 @@ pub fn verify_collaterals(
     if tee_type == IntelTeeType::Sgx {
         debug!("Verifying root ca crl...");
 
-        let root_ca_crl = get_root_ca_crl(pccs_url)?;
+        let root_ca_crl = get_root_ca_crl()?;
         verify_root_ca_crl(&root_ca_cert, &root_ca_crl)?;
     } else {
-        let (qe_identity_issuer_chain, raw_qe_identity) = get_qe_identity(pccs_url, tee_type)?;
+        let (qe_identity_issuer_chain, raw_qe_identity) = get_qe_identity(pcs_url, tee_type)?;
         let (qe_identity, crl_distribution_points) =
             verify_qe_identity(&qe_identity_issuer_chain, &raw_qe_identity, &root_ca_cert)?;
 
@@ -174,13 +174,13 @@ pub fn verify_collaterals(
     }
 
     debug!("Verifying pck crl...");
-    let (pck_crl_issuer_chain, pck_crl) = get_pck_crl(pccs_url, get_pck_ca(&pck_ca_cert)?)?;
+    let (pck_crl_issuer_chain, pck_crl) = get_pck_crl(pcs_url, get_pck_ca(&pck_ca_cert)?)?;
     verify_pck_cert_crl(&pck_crl_issuer_chain, &pck_crl, &root_ca_cert, &pck_ca_cert)?;
 
     debug!("Verifying tcb info...");
     let pck_extension = SgxPckExtension::from_pem_certificate_content(&chain[0])?;
     let (tcb_info_issuer_chain, raw_tcb_info) =
-        get_tcbinfo(pccs_url, tee_type, &pck_extension.fmspc)?;
+        get_tcbinfo(pcs_url, tee_type, &pck_extension.fmspc)?;
     verify_tcb_info(
         &tcb_info_issuer_chain,
         &raw_tcb_info,

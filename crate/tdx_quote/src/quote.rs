@@ -19,7 +19,7 @@ use tdx_attest_rs::{tdx_att_get_quote, tdx_report_data_t, tdx_uuid_t};
 pub const QUOTE_HEADER_SIZE: usize = 48;
 pub const QUOTE_REPORT_BODY_SIZE: usize = 584;
 
-const PCCS_URL: &str = "https://api.trustedservices.intel.com";
+const PCS_URL: &str = "https://api.trustedservices.intel.com";
 
 /// Header of Quote data structure (48 bytes)
 #[repr(C)]
@@ -400,7 +400,7 @@ pub fn verify_quote(raw_quote: &[u8], policy: &TdxQuoteVerificationPolicy) -> Re
             .qe_report_certification_data
             .qe_auth_data
             .qe_auth_data,
-        PCCS_URL,
+        PCS_URL,
         IntelTeeType::Tdx,
     )?;
 
