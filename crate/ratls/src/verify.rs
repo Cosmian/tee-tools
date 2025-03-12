@@ -27,7 +27,7 @@ pub fn forge_report_data(
     let mut hasher = Sha256::new();
 
     // Hash the public key of the certificate
-    hasher.update(&ratls_public_key.to_sec1_bytes());
+    hasher.update(ratls_public_key.to_sec1_bytes());
 
     let mut user_report_data = hasher.finalize()[..].to_vec();
 

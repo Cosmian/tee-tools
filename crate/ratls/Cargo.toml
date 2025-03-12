@@ -7,11 +7,12 @@ repository.workspace = true
 description = "Intel SGX/AMD SEV verification of Remote Attestation based TLS certificate"
 
 [dependencies]
-const-oid = { workspace = true }
+const-oid = "0.9"
 der = { workspace = true }
 ecdsa = { workspace = true }
 p256 = { workspace = true }
-rand_chacha = { workspace = true }
+# rand = "0.9"
+rand_chacha = { version = "0.3" }
 sha2 = { workspace = true }
 spki = { workspace = true }
 tee_attestation = { path = "../tee_attestation" }

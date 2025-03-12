@@ -13,10 +13,10 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 hex = { workspace = true }
 log = { workspace = true }
-nix = { version = "0.27", features = ["ioctl"] }
+nix = { version = "0.29", features = ["ioctl"] }
 p256 = { workspace = true }
 pccs_client = { path = "../pccs_client" }
-scroll = { version = "0.11", features = ["derive"] }
+scroll = { workspace = true }
 serde = { workspace = true }
 serde-hex = { workspace = true }
 sgx_quote = { path = "../sgx_quote" }
@@ -25,4 +25,4 @@ tdx-attest-rs = { git = "https://github.com/intel/SGXDataCenterAttestationPrimit
 thiserror = { workspace = true }
 
 [dev-dependencies]
-env_logger = "0.10"
+env_logger = "0.11"

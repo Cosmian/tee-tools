@@ -26,4 +26,4 @@ tdx_quote = { path = "../tdx_quote" }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-env_logger = "0.10"
+env_logger = "0.11"
