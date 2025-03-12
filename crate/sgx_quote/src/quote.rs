@@ -24,7 +24,7 @@ pub const QUOTE_QE_REPORT_SIZE: usize = 384;
 
 const QUOTE_MAX_SIZE: usize = 8192;
 
-const PCCS_URL: &str = "https://pccs.staging.mse.cosmian.com";
+const PCS_URL: &str = "https://api.trustedservices.intel.com";
 
 /// Header of Quote data structure (48 bytes).
 /// See [sgx_quote_3.h#L165](https://github.com/intel/SGXDataCenterAttestationPrimitives/blob/DCAP_1.16/QuoteGeneration/quote_wrapper/common/inc/sgx_quote_3.h#L165).
@@ -246,7 +246,7 @@ pub fn verify_quote(raw_quote: &[u8], policy: &SgxQuoteVerificationPolicy) -> Re
         &signature.qe_report.report_data,
         &signature.attest_pub_key,
         &auth_data.auth_data,
-        PCCS_URL,
+        PCS_URL,
         IntelTeeType::Sgx,
     )?;
 

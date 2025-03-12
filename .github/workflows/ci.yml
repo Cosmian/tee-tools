@@ -5,24 +5,9 @@ name: Continuous integration
 jobs:
   check:
     name: Check
-    runs-on: ${{ matrix.env }}
-
-    strategy:
-      matrix:
-        include:
-          - env: "no-tee"
-            docker-opt: "--device /dev/tpmrm0"
-          # TODO: enable this when SEV runner is working
-          # - env: "sev"
-          #   docker-opt: "--device /dev/sev-guest --device /dev/tpmrm0"
-          # TODO: enable this when TDX runner is working
-          # - env: "tdx"
-          #   docker-opt: "--device /dev/tdx_guest --device /dev/tpmrm0"
-          - env: "sgx"
-            docker-opt: "--device /dev/sgx_enclave --device /dev/sgx_provision"
+    runs-on: ubuntu-latest
     container:
-      image: ghcr.io/cosmian/intel-sgx:2.24 # We work in a container because we need root access for some tests (get quote for example)
-      options: ${{ matrix.docker-opt }} # We need the device to get TPM, TDX or SEV quote
+      image: ghcr.io/cosmian/intel-sgx:2.25
     steps:
       - name: Install dependencies
         run: |
@@ -40,7 +25,7 @@ jobs:
       - run: rustup component add rustfmt && rustup component add clippy && cargo install cargo-machete
 
       - name: Security Audit
-        uses: EmbarkStudios/cargo-deny-action@v1
+        uses: EmbarkStudios/cargo-deny-action@v2
 
       - name: Cargo fmt
         uses: actions-rs/cargo@v1
@@ -68,4 +53,4 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: -- --nocapture # We want to display messages concerning skipped tests
+          args: -- --nocapture

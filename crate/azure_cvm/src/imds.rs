@@ -6,7 +6,7 @@ use std::str::FromStr;
 use crate::{attestation_report::TdReport, error::Error};
 
 use base64::{engine::general_purpose, Engine as _};
-use zerocopy::AsBytes;
+use zerocopy::IntoBytes;
 
 // IMDS endpoint for VCEK certificate, AMD SEV CA and AMD Root CA
 const IMDS_THIM_ENDPOINT: &str = "http://169.254.169.254/metadata/THIM/amd/certification";

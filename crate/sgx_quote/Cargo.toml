@@ -18,7 +18,7 @@ log = { workspace = true }
 p256 = { workspace = true }
 pccs_client = { path = "../pccs_client" }
 rsa = { workspace = true }
-scroll = { version = "0.11", features = ["derive"] }
+scroll = { workspace = true }
 serde = { workspace = true }
 serde-hex = { workspace = true }
 serde_json = { workspace = true }
@@ -28,4 +28,4 @@ thiserror = { workspace = true }
 x509-parser = { workspace = true, features = ["verify"] }
 
 [dev-dependencies]
-env_logger = "0.10"
+env_logger = "0.11"

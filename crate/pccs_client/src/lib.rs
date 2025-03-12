@@ -37,7 +37,7 @@ impl IntelTeeType {
     }
 }
 
-/// Fetch Intel SGX Root CA Certificate Revocation List (CRL) from PCCS URL.
+/// Fetch Intel SGX Root CA Certificate Revocation List (CRL) from Intel Trusted Services.
 ///
 /// # Returns
 ///
@@ -48,29 +48,8 @@ impl IntelTeeType {
 /// See section 3.7 of [`SGX_DCAP_Caching_Service_Design_Guide.pdf`].
 ///
 /// [`SGX_DCAP_Caching_Service_Design_Guide.pdf`]: https://download.01.org/intel-sgx/sgx-dcap/1.18/linux/docs/SGX_DCAP_Caching_Service_Design_Guide.pdf
-pub fn get_root_ca_crl(pccs_url: &str) -> Result<Vec<u8>, Error> {
-    let url = reqwest::Url::from_str(&format!("{pccs_url}/sgx/certification/v4/rootcacrl"))
-        .map_err(|e| Error::URLError(e.to_string()))?;
-
-    let r = reqwest::blocking::get(url)?;
-
-    let body = match r.status() {
-        StatusCode::OK => Ok(r.bytes()?[..].to_vec()),
-        StatusCode::NOT_FOUND => Err(Error::PccsResponseError(
-            "Root CA CRL cannot be found".to_owned(),
-        )),
-        StatusCode::INTERNAL_SERVER_ERROR => Err(Error::PccsResponseError(
-            "Internal server error occurred".to_owned(),
-        )),
-        StatusCode::BAD_GATEWAY => Err(Error::PccsResponseError(
-            "Unable to retrieve the collateral from the Intel PCS API".to_owned(),
-        )),
-        s => Err(Error::UnexpectedError(format!("HTTP status code {s}"))),
-    }?;
-
-    let root_ca_crl = hex::decode(body).map_err(|e| Error::DecodeError(e.to_string()))?;
-
-    Ok(root_ca_crl)
+pub fn get_root_ca_crl() -> Result<Vec<u8>, Error> {
+    get_root_ca_crl_from_uri("https://certificates.trustedservices.intel.com/IntelSGXRootCA.der")
 }
 
 /// Fetch Intel SGX Root CA Certificate Revocation List (CRL) from a given URI.
@@ -111,10 +90,10 @@ pub fn get_root_ca_crl_from_uri(uri: &str) -> Result<Vec<u8>, Error> {
 /// See section 3.2 of [`SGX_DCAP_Caching_Service_Design_Guide.pdf`].
 ///
 /// [`SGX_DCAP_Caching_Service_Design_Guide.pdf`]: https://download.01.org/intel-sgx/sgx-dcap/1.18/linux/docs/SGX_DCAP_Caching_Service_Design_Guide.pdf
-pub fn get_pck_crl(pccs_url: &str, ca: PckCa) -> Result<(Vec<u8>, Vec<u8>), Error> {
+pub fn get_pck_crl(pcs_url: &str, ca: PckCa) -> Result<(Vec<u8>, Vec<u8>), Error> {
     let ca = ca.to_string();
     let url = reqwest::Url::parse_with_params(
-        &format!("{pccs_url}/sgx/certification/v4/pckcrl"),
+        &format!("{pcs_url}/sgx/certification/v4/pckcrl"),
         &[("ca", ca.as_str()), ("encoding", "der")],
     )
     .map_err(|e| Error::URLError(e.to_string()))?;
@@ -175,12 +154,12 @@ pub fn get_pck_crl(pccs_url: &str, ca: PckCa) -> Result<(Vec<u8>, Vec<u8>), Erro
 /// [`SGX_DCAP_Caching_Service_Design_Guide.pdf`]: https://download.01.org/intel-sgx/sgx-dcap/1.18/linux/docs/SGX_DCAP_Caching_Service_Design_Guide.pdf
 /// [`PCS API documentation`]: https://api.portal.trustedservices.intel.com/documentation#pcs-tcb-info-model-v3
 pub fn get_tcbinfo(
-    pccs_url: &str,
+    pcs_url: &str,
     tee: IntelTeeType,
     fmscp: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>), Error> {
     let url = reqwest::Url::parse_with_params(
-        &format!("{pccs_url}/{}/certification/v4/tcb", tee.as_str()),
+        &format!("{pcs_url}/{}/certification/v4/tcb", tee.as_str()),
         &[("fmspc", hex::encode(fmscp))],
     )
     .map_err(|e| Error::URLError(e.to_string()))?;
@@ -235,9 +214,9 @@ pub fn get_tcbinfo(
 //
 /// [`SGX_DCAP_Caching_Service_Design_Guide.pdf`]: https://download.01.org/intel-sgx/sgx-dcap/1.18/linux/docs/SGX_DCAP_Caching_Service_Design_Guide.pdf
 /// [`PCS API documentation`]: https://api.portal.trustedservices.intel.com/documentation#pcs-enclave-identity-model-v2
-pub fn get_qe_identity(pccs_url: &str, tee: IntelTeeType) -> Result<(Vec<u8>, Vec<u8>), Error> {
+pub fn get_qe_identity(pcs_url: &str, tee: IntelTeeType) -> Result<(Vec<u8>, Vec<u8>), Error> {
     let url = reqwest::Url::from_str(&format!(
-        "{pccs_url}/{}/certification/v4/qe/identity",
+        "{pcs_url}/{}/certification/v4/qe/identity",
         tee.as_str()
     ))
     .map_err(|e| Error::URLError(e.to_string()))?;
@@ -290,7 +269,7 @@ mod tests {
 
     #[test]
     fn test_intel_root_ca_crl() {
-        let root_ca_crl = get_root_ca_crl("https://pccs.mse.cosmian.com").unwrap();
+        let root_ca_crl = get_root_ca_crl().unwrap();
         let root_ca_crl = CertificateList::from_der(&root_ca_crl).unwrap();
         assert_eq!(
             root_ca_crl.tbs_cert_list.issuer.to_string(),
@@ -301,7 +280,7 @@ mod tests {
     #[test]
     fn test_intel_pck_crl() {
         let (pck_issuer_chain, pck_crl) =
-            get_pck_crl("https://pccs.mse.cosmian.com", PckCa::Platform).unwrap();
+            get_pck_crl("https://api.trustedservices.intel.com", PckCa::Platform).unwrap();
         let (pck_issuer_chain, pck_crl) = (
             Certificate::load_pem_chain(&pck_issuer_chain).unwrap(),
             CertificateList::from_der(&pck_crl).unwrap(),
@@ -340,8 +319,12 @@ mod tests {
     #[test]
     fn test_tcb_info_sgx() {
         let fmspc = hex::decode("30606a000000").unwrap();
-        let (tcb_info_issuer_chain, tcb_info) =
-            get_tcbinfo("https://pccs.mse.cosmian.com", IntelTeeType::Sgx, &fmspc).unwrap();
+        let (tcb_info_issuer_chain, tcb_info) = get_tcbinfo(
+            "https://api.trustedservices.intel.com",
+            IntelTeeType::Sgx,
+            &fmspc,
+        )
+        .unwrap();
 
         assert!(String::from_utf8(tcb_info).is_ok());
 
@@ -386,7 +369,7 @@ mod tests {
     #[test]
     fn test_qe_identity_sgx() {
         let (qe_identity_issuer_chain, qe_identity) =
-            get_qe_identity("https://pccs.mse.cosmian.com", IntelTeeType::Sgx).unwrap();
+            get_qe_identity("https://api.trustedservices.intel.com", IntelTeeType::Sgx).unwrap();
 
         assert!(String::from_utf8(qe_identity).is_ok());
 
