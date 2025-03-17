@@ -21,7 +21,7 @@ serde = { workspace = true }
 serde-hex = { workspace = true }
 sev = { workspace = true, features = [
     "snp",
-    "openssl",
+    "crypto_nossl",
     "sev",
 ] }
 sha2 = { workspace = true }
