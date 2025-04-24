@@ -1,17 +1,14 @@
 use crate::key::{get_key_from_persistent_handle, TPM_AK_NVINDEX};
 use error::Error;
 use policy::TpmPolicy;
-use sha2::Digest;
 use std::convert::TryInto;
 use tss_esapi::{
     interface_types::algorithm::HashingAlgorithm,
-    structures::{
-        Attest, AttestInfo, PcrSelectionListBuilder, PcrSlot, Public, QuoteInfo, Signature,
-    },
+    structures::{Attest, AttestInfo, PcrSelectionListBuilder, PcrSlot, Public, Signature},
     traits::{Marshall, UnMarshall},
     Context,
 };
-use verify::verify_quote_signature;
+use verify::{verify_pcr_value, verify_quote_policy, verify_quote_signature};
 
 pub mod command;
 pub mod convert;
@@ -85,6 +82,20 @@ pub fn get_quote(
     ))
 }
 
+/// Extract the digest of PCRs in TPM `quote`.
+///
+/// # Returns
+///
+/// Either [`Vec<u8>`] or [`Error`].
+pub fn get_pcr_digest_from_quote(quote: &[u8]) -> Result<Vec<u8>, Error> {
+    let attestation_data = Attest::unmarshall(quote)?;
+    let AttestInfo::Quote { info: quote_info } = attestation_data.attested() else {
+        return Err(Error::QuoteError("unexpected attestion type".to_owned()));
+    };
+
+    Ok(quote_info.pcr_digest().to_owned().to_vec())
+}
+
 /// Verify signature of the `quote` with `public_key`` and `nonce`.
 ///
 /// # Returns
@@ -123,55 +134,6 @@ pub fn verify_quote(
     };
 
     verify_pcr_value(quote_info, pcr_value)?;
-
-    Ok(())
-}
-
-/// Verify the quote against expected values
-pub(crate) fn verify_quote_policy(
-    attestation_data: &Attest,
-    policy: &TpmPolicy,
-) -> Result<(), Error> {
-    if let Some(reset_count) = policy.reset_count {
-        if attestation_data.clock_info().reset_count() != reset_count {
-            return Err(Error::VerificationError(format!(
-                "Attestation reset count '{}' is not equal to the set value '{}'",
-                attestation_data.clock_info().reset_count(),
-                reset_count
-            )));
-        }
-    }
-
-    if let Some(restart_count) = policy.restart_count {
-        if attestation_data.clock_info().restart_count() != restart_count {
-            return Err(Error::VerificationError(format!(
-                "Attestation restart count '{}' is not equal to the set value '{}'",
-                attestation_data.clock_info().restart_count(),
-                restart_count
-            )));
-        }
-    }
-
-    Ok(())
-}
-
-/// Verify the digest of the `pcr_value`.
-///
-/// # Returns
-///
-/// Either [`()`] or [`Error`].
-pub fn verify_pcr_value(quote_info: &QuoteInfo, pcr_value: &[u8]) -> Result<(), Error> {
-    let hpcr_value: [u8; 32] = quote_info.pcr_digest().to_owned().try_into()?;
-
-    let expected_hpcr_value = sha2::Sha256::digest(pcr_value).to_vec();
-    if expected_hpcr_value != hpcr_value[..] {
-        return Err(Error::VerificationError(format!(
-            "Bad Hash(PCR digest) in quote '{}', expected: '{}' from '{}'",
-            hex::encode(hpcr_value),
-            hex::encode(expected_hpcr_value),
-            hex::encode(pcr_value),
-        )));
-    }
 
     Ok(())
 }

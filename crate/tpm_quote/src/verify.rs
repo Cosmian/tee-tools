@@ -1,16 +1,19 @@
-use crate::error::Error;
+use crate::{error::Error, policy::TpmPolicy};
 
 use std::convert::TryInto;
+
+use sha2::Digest;
 
 use p256::ecdsa::{signature::Verifier, VerifyingKey};
 use tss_esapi::{
     interface_types::{
         algorithm::HashingAlgorithm, ecc::EccCurve, structure_tags::AttestationType,
     },
-    structures::{Attest, EccScheme, Public, Signature},
+    structures::{Attest, EccScheme, Public, QuoteInfo, Signature},
     traits::Marshall,
 };
 
+/// Verify signature of TPM attestation with public key `pk`.
 pub(crate) fn verify_quote_signature(
     attestation_data: &Attest,
     signature: &Signature,
@@ -106,4 +109,49 @@ pub(crate) fn verify_quote_signature(
         .map_err(|_| Error::CryptoError("failed to verify quote signature".to_owned()))?;
 
     Ok(nonce)
+}
+
+/// Verify the quote against expected values in `TpmPolicy`.
+pub(crate) fn verify_quote_policy(
+    attestation_data: &Attest,
+    policy: &TpmPolicy,
+) -> Result<(), Error> {
+    if let Some(reset_count) = policy.reset_count {
+        if attestation_data.clock_info().reset_count() != reset_count {
+            return Err(Error::VerificationError(format!(
+                "Attestation reset count '{}' is not equal to the set value '{}'",
+                attestation_data.clock_info().reset_count(),
+                reset_count
+            )));
+        }
+    }
+
+    if let Some(restart_count) = policy.restart_count {
+        if attestation_data.clock_info().restart_count() != restart_count {
+            return Err(Error::VerificationError(format!(
+                "Attestation restart count '{}' is not equal to the set value '{}'",
+                attestation_data.clock_info().restart_count(),
+                restart_count
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Verify the digest of PCRs in `QuoteInfo` against expected `pcr_value`.
+pub(crate) fn verify_pcr_value(quote_info: &QuoteInfo, pcr_value: &[u8]) -> Result<(), Error> {
+    let hpcr_value: [u8; 32] = quote_info.pcr_digest().to_owned().try_into()?;
+
+    let expected_hpcr_value = sha2::Sha256::digest(pcr_value).to_vec();
+    if expected_hpcr_value != hpcr_value[..] {
+        return Err(Error::VerificationError(format!(
+            "Bad Hash(PCR digest) in quote '{}', expected: '{}' from '{}'",
+            hex::encode(hpcr_value),
+            hex::encode(expected_hpcr_value),
+            hex::encode(pcr_value),
+        )));
+    }
+
+    Ok(())
 }
