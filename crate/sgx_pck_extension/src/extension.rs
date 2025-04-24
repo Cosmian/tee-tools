@@ -119,18 +119,18 @@ impl SgxPckExtension {
             Ok((rem, pem)) if !rem.is_empty() || pem.label.as_str() != "CERTIFICATE" => {
                 Err(SgxPckExtensionError::PEMParsingError)
             }
-            Ok((_, pem)) => SgxPckExtension::from_pem_certificate_content(&pem.contents),
+            Ok((_, pem)) => SgxPckExtension::from_der_certificate(&pem.contents),
             Err(_) => Err(SgxPckExtensionError::PEMParsingError),
         }
     }
 
-    pub fn from_pem_certificate_content(
-        decoded_pem: &[u8],
+    pub fn from_der_certificate(
+        der_certificate: &[u8],
     ) -> Result<SgxPckExtension, SgxPckExtensionError> {
         let sgx_extension_oid =
             Oid::from_str(&SGX_EXTENSIONS_OID.to_string()).expect("Bad SGX extension OID");
 
-        match parse_x509_certificate(decoded_pem) {
+        match parse_x509_certificate(der_certificate) {
             Ok((rem, _)) if !rem.is_empty() => Err(SgxPckExtensionError::X509ParsingError),
             Ok((_, x509)) => match x509.get_extension_unique(&sgx_extension_oid) {
                 Ok(Some(sgx_extension)) => SgxPckExtension::from_der(sgx_extension.value)

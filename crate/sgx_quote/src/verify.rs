@@ -178,7 +178,7 @@ pub fn verify_collaterals(
     verify_pck_cert_crl(&pck_crl_issuer_chain, &pck_crl, &root_ca_cert, &pck_ca_cert)?;
 
     debug!("Verifying tcb info...");
-    let pck_extension = SgxPckExtension::from_pem_certificate_content(&chain[0])?;
+    let pck_extension = SgxPckExtension::from_der_certificate(&chain[0])?;
     let (tcb_info_issuer_chain, raw_tcb_info) =
         get_tcbinfo(pcs_url, tee_type, &pck_extension.fmspc)?;
     verify_tcb_info(

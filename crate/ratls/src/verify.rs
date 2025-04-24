@@ -133,8 +133,10 @@ mod tests {
         let cert = include_bytes!("../data/sev-cert.ratls.pem");
 
         let measurement =
-            hex::decode(b"c2c84b9364fc9f0f54b04534768c860c6e0e386ad98b96e8b98eca46ac8971d05c531ba48373f054c880cfd1f4a0a84e")
-                .unwrap().try_into().unwrap();
+            hex::decode(b"59ead9b42664d54fda54f707670386f61b1d3bd34e2da8c8f9ac067e617a0aae4623304a4aa98bb30756affb4b6c0a05")
+                .unwrap()
+                .try_into()
+                .unwrap();
 
         assert!(verify_ratls(
             cert,
