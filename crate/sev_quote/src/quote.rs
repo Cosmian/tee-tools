@@ -25,18 +25,10 @@ use sev::{
     firmware::host::CertType,
 };
 
-use uuid::Uuid;
 use x509_parser::{self, pem::parse_x509_pem};
 
 #[cfg(target_os = "linux")]
 use crate::REPORT_DATA_SIZE;
-
-const AWS_VLEK_TYPE: Uuid = Uuid::from_fields(
-    0xa807_4bc2,
-    0xa25a,
-    0x483e,
-    &[0xaa, 0xe6, 0x39, 0xc0, 0x45, 0xa0, 0xb8, 0xa1],
-);
 
 const SEV_PROD_NAME: SevProdName = SevProdName::Milan;
 const KDS_CERT_SITE: &str = "https://kdsintf.amd.com";
@@ -117,7 +109,7 @@ pub fn verify_quote(quote: &Quote, policy: &SevQuoteVerificationPolicy) -> Resul
     let vlek = quote
         .certs
         .iter()
-        .find(|item| item.cert_type == CertType::OTHER(AWS_VLEK_TYPE));
+        .find(|item| item.cert_type == CertType::VLEK);
     let ark = quote
         .certs
         .iter()
@@ -219,8 +211,8 @@ mod tests {
         verify_quote(
             &quote,
             &SevQuoteVerificationPolicy {
-                measurement: Some(hex::decode("c2c84b9364fc9f0f54b04534768c860c6e0e386ad98b96e8b98eca46ac8971d05c531ba48373f054c880cfd1f4a0a84e").unwrap().try_into().unwrap()),
-                report_data: Some(hex::decode("0d155251f139f682dc4ea2798feceed7c475461c8faecf7496401500956624540000000000000000000000000000000000000000000000000000000000000000").unwrap().try_into().unwrap()) ,
+                measurement: Some(hex::decode("ac3e4d8516634a5e0180338175cc827c90061414bd699b5af30712caa291fa34ed06cc622792bc1177126bd115a826ba").unwrap().try_into().unwrap()),
+                report_data: Some(hex::decode("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap().try_into().unwrap()) ,
                 ..Default::default()
             }
         )
