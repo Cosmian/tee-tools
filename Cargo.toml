@@ -39,7 +39,7 @@ reqwest = { version = "0.13", default-features = false, features = [
     "blocking",
 ] }
 rsa = "0.9"
-scroll = { version = "0.12", features = ["derive"] }
+scroll = { version = "0.13", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde-hex = "0.1"
