@@ -12,7 +12,7 @@ use crate::{
     error::Error,
 };
 
-use base64::{engine::general_purpose, Engine};
+use base64::{Engine, engine::general_purpose};
 use jose_jws::{General, Protected, Unprotected};
 use jwk::MaaJwks;
 use jwt_simple::{
@@ -94,7 +94,7 @@ pub fn verify_sgx_quote(
     let mut rng = rand::thread_rng();
 
     let jwks = maa_certificates(maa_url)?;
-    let nonce: [u8; 32] = rng.gen();
+    let nonce: [u8; 32] = rng.r#gen();
     let token = maa_attest_sgx_enclave(maa_url, &nonce, quote, enclave_held_data)?;
     let payload = verify_rs256_jws(&token, jwks, Some(&nonce))?;
     let sgx_claim = serde_json::from_value::<SgxClaim>(payload).unwrap();
@@ -112,24 +112,24 @@ pub fn verify_sgx_quote(
         ));
     }
 
-    if let Some(mr_enclave) = mr_enclave {
-        if mr_enclave.len() == sgx_claim.sgx_mrenclave.len()
-            && mr_enclave != sgx_claim.sgx_mrenclave
-        {
-            return Err(Error::SgxVerificationError(format!(
-                "MRENCLAVE differs: {:?} != {:?}",
-                mr_enclave, sgx_claim.sgx_mrenclave
-            )));
-        }
+    if let Some(mr_enclave) = mr_enclave
+        && mr_enclave.len() == sgx_claim.sgx_mrenclave.len()
+        && mr_enclave != sgx_claim.sgx_mrenclave
+    {
+        return Err(Error::SgxVerificationError(format!(
+            "MRENCLAVE differs: {:?} != {:?}",
+            mr_enclave, sgx_claim.sgx_mrenclave
+        )));
     }
 
-    if let Some(mr_signer) = mr_signer {
-        if mr_signer.len() == sgx_claim.sgx_mrsigner.len() && mr_signer != sgx_claim.sgx_mrsigner {
-            return Err(Error::SgxVerificationError(format!(
-                "MRSIGNER differs: {:?} != {:?}",
-                mr_signer, sgx_claim.sgx_mrsigner
-            )));
-        }
+    if let Some(mr_signer) = mr_signer
+        && mr_signer.len() == sgx_claim.sgx_mrsigner.len()
+        && mr_signer != sgx_claim.sgx_mrsigner
+    {
+        return Err(Error::SgxVerificationError(format!(
+            "MRSIGNER differs: {:?} != {:?}",
+            mr_signer, sgx_claim.sgx_mrsigner
+        )));
     }
 
     Ok(sgx_claim)
@@ -154,7 +154,7 @@ pub fn verify_sev_quote(
     let mut rng = rand::thread_rng();
 
     let jwks = maa_certificates(maa_url)?;
-    let nonce: [u8; 32] = rng.gen();
+    let nonce: [u8; 32] = rng.r#gen();
     let payload = serde_json::json!({"SnpReport": general_purpose::URL_SAFE_NO_PAD.encode(report), "VcekCertChain": general_purpose::URL_SAFE_NO_PAD.encode(amd_cert_chain)}).to_string();
     let token = maa_attest_sev_cvm(maa_url, &nonce, payload.as_bytes(), None)?;
     let jws_payload = verify_rs256_jws(&token, jwks, Some(&nonce))?;
@@ -176,7 +176,7 @@ pub fn verify_tdx_quote(maa_url: &str, quote: &[u8]) -> Result<TdxClaim, Error> 
     let mut rng = rand::thread_rng();
 
     let jwks = maa_certificates(maa_url)?;
-    let nonce: [u8; 32] = rng.gen();
+    let nonce: [u8; 32] = rng.r#gen();
     let token = maa_attest_tdx_cvm(maa_url, &nonce, quote, None)?;
     let jws_payload = verify_rs256_jws(&token, jwks, Some(&nonce))?;
 

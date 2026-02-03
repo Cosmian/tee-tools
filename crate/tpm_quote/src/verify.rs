@@ -4,7 +4,7 @@ use std::convert::TryInto;
 
 use sha2::Digest;
 
-use p256::ecdsa::{signature::Verifier, VerifyingKey};
+use p256::ecdsa::{VerifyingKey, signature::Verifier};
 use tss_esapi::{
     interface_types::{
         algorithm::HashingAlgorithm, ecc::EccCurve, structure_tags::AttestationType,
@@ -116,24 +116,24 @@ pub(crate) fn verify_quote_policy(
     attestation_data: &Attest,
     policy: &TpmPolicy,
 ) -> Result<(), Error> {
-    if let Some(reset_count) = policy.reset_count {
-        if attestation_data.clock_info().reset_count() != reset_count {
-            return Err(Error::VerificationError(format!(
-                "Attestation reset count '{}' is not equal to the set value '{}'",
-                attestation_data.clock_info().reset_count(),
-                reset_count
-            )));
-        }
+    if let Some(reset_count) = policy.reset_count
+        && attestation_data.clock_info().reset_count() != reset_count
+    {
+        return Err(Error::VerificationError(format!(
+            "Attestation reset count '{}' is not equal to the set value '{}'",
+            attestation_data.clock_info().reset_count(),
+            reset_count
+        )));
     }
 
-    if let Some(restart_count) = policy.restart_count {
-        if attestation_data.clock_info().restart_count() != restart_count {
-            return Err(Error::VerificationError(format!(
-                "Attestation restart count '{}' is not equal to the set value '{}'",
-                attestation_data.clock_info().restart_count(),
-                restart_count
-            )));
-        }
+    if let Some(restart_count) = policy.restart_count
+        && attestation_data.clock_info().restart_count() != restart_count
+    {
+        return Err(Error::VerificationError(format!(
+            "Attestation restart count '{}' is not equal to the set value '{}'",
+            attestation_data.clock_info().restart_count(),
+            restart_count
+        )));
     }
 
     Ok(())

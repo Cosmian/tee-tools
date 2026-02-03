@@ -205,10 +205,10 @@ impl TryFrom<HclReport> for SnpReport {
 }
 
 pub fn is_az_cvm() -> Option<ReportType> {
-    if let Ok(raw_hcl_report) = get_hcl_report() {
-        if let Ok(hcl_report) = HclReport::new(raw_hcl_report) {
-            return Some(hcl_report.report_type());
-        }
+    if let Ok(raw_hcl_report) = get_hcl_report()
+        && let Ok(hcl_report) = HclReport::new(raw_hcl_report)
+    {
+        return Some(hcl_report.report_type());
     }
 
     None

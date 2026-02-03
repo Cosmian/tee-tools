@@ -15,7 +15,7 @@ members = [
 
 [workspace.package]
 version = "1.6.2"
-edition = "2021"
+edition = "2024"
 license = "BUSL-1.1" # "Business Source License 1.1"
 license-file = "LICENSE"
 repository = "https://github.com/Cosmian/tee-tools"
