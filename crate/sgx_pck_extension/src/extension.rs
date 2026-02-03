@@ -145,12 +145,14 @@ impl SgxPckExtension {
     }
 }
 
+#[allow(clippy::result_large_err)]
 #[derive(asn1::Asn1Read)]
 struct SgxExtension<'a> {
     pub sgx_extension_id: ObjectIdentifier,
     pub value: ExtensionValue<'a>,
 }
 
+#[allow(clippy::result_large_err)]
 #[derive(asn1::Asn1Read)]
 enum ExtensionValue<'a> {
     OctetString(&'a [u8]),
