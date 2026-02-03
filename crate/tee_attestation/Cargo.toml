@@ -11,8 +11,12 @@ name = "tee_attestation"
 crate-type = ["cdylib", "rlib"]
 
 [[bin]]
-name = "get_hw_evidence"
-path = "src/main.rs"
+name = "get_report"
+path = "src/get_report.rs"
+
+[[bin]]
+name = "verify_report"
+path = "src/verify_report.rs"
 
 [dependencies]
 azure_cvm = { path = "../azure_cvm" }
