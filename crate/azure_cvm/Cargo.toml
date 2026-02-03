@@ -7,9 +7,6 @@ repository.workspace = true
 
 [dependencies]
 base64 = { workspace = true }
-bincode = { workspace = true }
-jose-jwk = { version = "0.1", features = ["rsa"] }
-memoffset = "0.9"
 reqwest = { version = "0.12", default-features = false, features = [
   "json",
   "blocking",
@@ -17,7 +14,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 serde = { version = "1.0", features = ["derive"] }
 serde-big-array = "0.5"
 serde_json = "1.0"
-sev = { workspace = true }
+sev = { workspace = true, features = ["snp", "openssl"] }
 sha2 = "0.10"
 thiserror = { workspace = true }
 tss-esapi = "7.6"

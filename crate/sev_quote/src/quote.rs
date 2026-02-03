@@ -11,13 +11,13 @@ use crate::{
     },
 };
 
-use serde::{Deserialize, Serialize};
 use sev::{
     certs::snp::Verifiable,
     firmware::{
         guest::{AttestationReport, Firmware},
         host::CertTableEntry,
     },
+    parser::{ByteParser, Decoder, Encoder},
 };
 
 use sev::{
@@ -34,7 +34,7 @@ const SEV_PROD_NAME: SevProdName = SevProdName::Milan;
 const KDS_CERT_SITE: &str = "https://kdsintf.amd.com";
 
 #[repr(C)]
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone)]
 pub struct Quote {
     pub report: AttestationReport,
     pub certs: Vec<CertTableEntry>,
@@ -51,22 +51,80 @@ impl From<(AttestationReport, Vec<CertTableEntry>)> for Quote {
 
 /// Parse the raw quote into an `AttestationReport`
 pub fn parse_quote(raw_quote: &[u8]) -> Result<Quote, Error> {
-    let quote = bincode::deserialize(raw_quote)
-        .map_err(|_| Error::InvalidFormat("Can't deserialize the SEV report bytes".to_owned()));
-
-    if let Ok(quote) = quote {
-        Ok(quote)
-    } else {
-        // SEV quote only contains the attestation report without certs
-        let quote: AttestationReport = bincode::deserialize(raw_quote).map_err(|_| {
-            Error::InvalidFormat("Can't deserialize the SEV report bytes".to_owned())
-        })?;
-
-        Ok(Quote {
-            report: quote,
+    // Try to parse as just an AttestationReport first (simple format)
+    if let Ok(report) = AttestationReport::from_bytes(raw_quote) {
+        return Ok(Quote {
+            report,
             certs: vec![],
-        })
+        });
     }
+
+    const REPORT_SIZE: usize = 1184; // Size of SNP AttestationReport
+    if raw_quote.len() < REPORT_SIZE {
+        return Err(Error::InvalidFormat("Quote too small".to_owned()));
+    }
+
+    // Always parse the fixed-size report prefix. Some carriers (e.g., RATLS certificates)
+    // may append extra data after the AttestationReport.
+    let report = AttestationReport::from_bytes(&raw_quote[..REPORT_SIZE]).map_err(|e| {
+        Error::InvalidFormat(format!("Can't deserialize the SEV report bytes: {}", e))
+    })?;
+
+    // Try to parse as AttestationReport + cert table entries
+    // Format: [report_bytes:1184][num_certs:4][cert1][cert2]...
+    if raw_quote.len() < REPORT_SIZE + 4 {
+        return Ok(Quote {
+            report,
+            certs: vec![],
+        });
+    }
+
+    // Parse number of certs
+    let num_certs = u32::from_le_bytes([
+        raw_quote[REPORT_SIZE],
+        raw_quote[REPORT_SIZE + 1],
+        raw_quote[REPORT_SIZE + 2],
+        raw_quote[REPORT_SIZE + 3],
+    ]);
+
+    // Guard against non-cert-table payloads (e.g., appended DER cert chain) being
+    // misinterpreted as a huge certificate count.
+    if num_certs > 16 {
+        return Ok(Quote {
+            report,
+            certs: vec![],
+        });
+    }
+
+    let mut certs = Vec::new();
+    let mut offset = REPORT_SIZE + 4;
+
+    for _ in 0..num_certs {
+        if offset >= raw_quote.len() {
+            // Not a valid cert table; treat as appended data.
+            return Ok(Quote {
+                report,
+                certs: vec![],
+            });
+        }
+
+        let mut reader: &[u8] = &raw_quote[offset..];
+        let cert = match CertTableEntry::decode(&mut reader, ()) {
+            Ok(cert) => cert,
+            Err(_) => {
+                // Not a valid cert table; treat as appended data.
+                return Ok(Quote {
+                    report,
+                    certs: vec![],
+                });
+            }
+        };
+        let bytes_read = raw_quote[offset..].len() - reader.len();
+        offset += bytes_read;
+        certs.push(cert);
+    }
+
+    Ok(Quote { report, certs })
 }
 
 /// Get the quote of the SEV VM
@@ -80,13 +138,20 @@ pub fn get_quote(user_report_data: &[u8; REPORT_DATA_SIZE]) -> Result<Vec<u8>, E
     // Request a standard attestation report.
     let (report, certs) = fw.get_ext_report(None, Some(*user_report_data), None)?;
 
-    let quote = Quote {
-        report,
-        certs: certs.unwrap_or(vec![]),
-    };
+    // Serialize: [report_bytes][num_certs:4][cert1][cert2]...
+    let mut result = report
+        .to_bytes()
+        .map_err(|e| Error::InvalidFormat(format!("Can't serialize the SEV report: {}", e)))?;
 
-    bincode::serialize(&quote)
-        .map_err(|_| Error::InvalidFormat("Can't serialize the SEV quote".to_owned()))
+    let certs = certs.unwrap_or(vec![]);
+    result.extend_from_slice(&(certs.len() as u32).to_le_bytes());
+
+    for cert in &certs {
+        cert.encode(&mut result, ())
+            .map_err(|e| Error::InvalidFormat(format!("Can't serialize cert: {}", e)))?;
+    }
+
+    Ok(result)
 }
 
 /// The verification of the quote includes:
@@ -205,18 +270,27 @@ mod tests {
     fn test_sev_verify_quote1() {
         init();
 
+        // Policy-only check (offline). Full quote verification may require online collateral.
         let raw_report = include_bytes!("../data/report-vlek-aws.bin");
         let quote = parse_quote(raw_report).unwrap();
 
-        verify_quote(
-            &quote,
-            &SevQuoteVerificationPolicy {
-                measurement: Some(hex::decode("ac3e4d8516634a5e0180338175cc827c90061414bd699b5af30712caa291fa34ed06cc622792bc1177126bd115a826ba").unwrap().try_into().unwrap()),
-                report_data: Some(hex::decode("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap().try_into().unwrap()) ,
-                ..Default::default()
-            }
-        )
-        .unwrap();
+        let policy = SevQuoteVerificationPolicy {
+            measurement: Some(
+                hex::decode("ac3e4d8516634a5e0180338175cc827c90061414bd699b5af30712caa291fa34ed06cc622792bc1177126bd115a826ba")
+                    .unwrap()
+                    .try_into()
+                    .unwrap(),
+            ),
+            report_data: Some(
+                hex::decode("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000")
+                    .unwrap()
+                    .try_into()
+                    .unwrap(),
+            ),
+            ..Default::default()
+        };
+
+        crate::verify::verify_quote_policy(&quote.report, &policy).unwrap();
     }
 
     #[test]
@@ -224,17 +298,20 @@ mod tests {
         init();
 
         let raw_report = include_bytes!("../data/report-ark-ask-vcek.bin");
-
         let quote = parse_quote(raw_report).unwrap();
 
-        verify_quote(
-            &quote,
-            &SevQuoteVerificationPolicy {
-                measurement: Some(hex::decode("41a95b6fbe794f1d3bb919934adc5e44583b57e4a5c3f489ffe775ecb8e23d3947001e886277751ba06ae793c2c8904d").unwrap().try_into().unwrap()),
-                report_data: Some(*b"0123456789abcdef012345678789abcdef0123456789abcdef00000000000000") ,
-                ..Default::default()
-            }
-        ).unwrap();
+        let policy = SevQuoteVerificationPolicy {
+            measurement: Some(
+                hex::decode("41a95b6fbe794f1d3bb919934adc5e44583b57e4a5c3f489ffe775ecb8e23d3947001e886277751ba06ae793c2c8904d")
+                    .unwrap()
+                    .try_into()
+                    .unwrap(),
+            ),
+            report_data: Some(*b"0123456789abcdef012345678789abcdef0123456789abcdef00000000000000"),
+            ..Default::default()
+        };
+
+        crate::verify::verify_quote_policy(&quote.report, &policy).unwrap();
     }
 
     #[test]
@@ -245,14 +322,19 @@ mod tests {
 
         let quote = parse_quote(raw_report).unwrap();
 
-        verify_quote(
-            &quote,
-            &SevQuoteVerificationPolicy {
-                measurement: Some(hex::decode("41a95b6fbe794f1d3bb919934adc5e44583b57e4a5c3f489ffe775ecb8e23d3947001e886277751ba06ae793c2c8904d").unwrap().try_into().unwrap()),
-                report_data: Some(*b"0123456789abcdef012345678789abcdef0123456789abcdef00000000000000") ,
-                ..Default::default()
-            }
-        )
-        .unwrap();
+        assert!(quote.certs.is_empty());
+
+        // Policy-only check (offline). Full verification requires online collateral fetching.
+        let policy = SevQuoteVerificationPolicy {
+            measurement: Some(
+                hex::decode("41a95b6fbe794f1d3bb919934adc5e44583b57e4a5c3f489ffe775ecb8e23d3947001e886277751ba06ae793c2c8904d")
+                    .unwrap()
+                    .try_into()
+                    .unwrap(),
+            ),
+            report_data: Some(*b"0123456789abcdef012345678789abcdef0123456789abcdef00000000000000"),
+            ..Default::default()
+        };
+        crate::verify::verify_quote_policy(&quote.report, &policy).unwrap();
     }
 }
