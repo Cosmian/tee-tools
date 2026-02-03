@@ -33,9 +33,9 @@ hkdf = "0.12"
 log = "0.4"
 openssl = { version = "0.10", features = ["vendored"] }
 p256 = { version = "0.13", features = ["arithmetic", "pkcs8", "ecdsa-core"] }
-reqwest = { version = "0.12", default-features = false, features = [
+reqwest = { version = "0.13", default-features = false, features = [
     "json",
-    "rustls-tls",
+    "rustls",
     "blocking",
 ] }
 rsa = "0.9"
