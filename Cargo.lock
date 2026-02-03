@@ -148,7 +148,7 @@ dependencies = [
  "nom",
  "num-traits",
  "rusticata-macros",
- "thiserror 2.0.12",
+ "thiserror 2.0.18",
  "time",
 ]
 
@@ -246,7 +246,7 @@ dependencies = [
  "serde_json",
  "sev",
  "sha2",
- "thiserror 2.0.12",
+ "thiserror 2.0.18",
  "tss-esapi",
  "zerocopy",
 ]
@@ -1593,7 +1593,7 @@ dependencies = [
  "rsa",
  "serde",
  "serde_json",
- "thiserror 2.0.12",
+ "thiserror 2.0.18",
  "x509-cert",
 ]
 
@@ -1855,7 +1855,7 @@ version = "1.6.2"
 dependencies = [
  "hex",
  "reqwest",
- "thiserror 2.0.12",
+ "thiserror 2.0.18",
  "urlencoding",
  "x509-cert",
 ]
@@ -2018,7 +2018,7 @@ dependencies = [
  "rustc-hash 2.1.1",
  "rustls",
  "socket2 0.5.7",
- "thiserror 2.0.12",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
 ]
@@ -2038,7 +2038,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "slab",
- "thiserror 2.0.12",
+ "thiserror 2.0.18",
  "tinyvec",
  "tracing",
  "web-time",
@@ -2116,7 +2116,7 @@ dependencies = [
  "sha2",
  "spki",
  "tee_attestation",
- "thiserror 2.0.12",
+ "thiserror 2.0.18",
  "x509-cert",
  "x509-parser",
 ]
@@ -2571,7 +2571,7 @@ dependencies = [
  "serde-hex",
  "sev",
  "sha2",
- "thiserror 2.0.12",
+ "thiserror 2.0.18",
  "x509-parser",
 ]
 
@@ -2581,7 +2581,7 @@ version = "1.6.2"
 dependencies = [
  "asn1",
  "asn1-rs",
- "thiserror 2.0.12",
+ "thiserror 2.0.18",
  "x509-parser",
 ]
 
@@ -2603,7 +2603,7 @@ dependencies = [
  "serde_json",
  "sgx_pck_extension",
  "sha2",
- "thiserror 2.0.12",
+ "thiserror 2.0.18",
  "x509-parser",
 ]
 
@@ -2820,7 +2820,7 @@ dependencies = [
  "sgx_quote",
  "sha2",
  "tdx-attest-rs",
- "thiserror 2.0.12",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2836,7 +2836,7 @@ dependencies = [
  "sgx_quote",
  "sha2",
  "tdx_quote",
- "thiserror 2.0.12",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2890,11 +2890,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.12"
+version = "2.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "567b8a2dae586314f7be2a752ec7474332959c6460e02bde30d702a66d488708"
+checksum = "4288b5bcbc7920c07a1149a35cf9590a2aa808e0bc1eafaade0b80947865fbc4"
 dependencies = [
- "thiserror-impl 2.0.12",
+ "thiserror-impl 2.0.18",
 ]
 
 [[package]]
@@ -2910,9 +2910,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.12"
+version = "2.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f7cf42b4507d8ea322120659672cf1b9dbb93f8f2d4ecfd6e51350ff5b17a1d"
+checksum = "ebc4ee7f67670e9b64d05fa4253e753e016c6c95ff35b89b7941d6b856dec1d5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3087,7 +3087,7 @@ dependencies = [
  "serde",
  "sha2",
  "test-log",
- "thiserror 2.0.12",
+ "thiserror 2.0.18",
  "tracing-subscriber",
  "tss-esapi",
 ]
@@ -3799,7 +3799,7 @@ dependencies = [
  "oid-registry",
  "ring",
  "rusticata-macros",
- "thiserror 2.0.12",
+ "thiserror 2.0.18",
  "time",
 ]
 
