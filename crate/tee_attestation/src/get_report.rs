@@ -1,4 +1,4 @@
-use tee_attestation::{get_quote, guess_tee, TeeType};
+use tee_attestation::{TeeType, get_quote, guess_tee};
 
 fn main() {
     let tee_type = guess_tee().unwrap();
