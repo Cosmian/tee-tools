@@ -4,8 +4,6 @@ pub mod error;
 pub mod jwk;
 pub mod utils;
 
-use std::str::FromStr;
-
 use crate::{
     api::{maa_attest_sev_cvm, maa_attest_sgx_enclave, maa_attest_tdx_cvm, maa_certificates},
     claim::{SevClaim, SgxClaim, TdxClaim},
@@ -13,13 +11,8 @@ use crate::{
 };
 
 use base64::{engine::general_purpose, Engine};
-use jose_jws::{General, Protected, Unprotected};
+use jsonwebtoken::{decode, decode_header, Algorithm, Validation};
 use jwk::MaaJwks;
-use jwt_simple::{
-    common::VerificationOptions,
-    prelude::{RS256PublicKey, RSAPublicKeyLike},
-    reexports::rand::{self, Rng as _},
-};
 
 /// Verify JSON Web Signature (JWS) using JSON Web Key Set (JWKS).
 ///
@@ -31,44 +24,50 @@ pub fn verify_rs256_jws(
     jwks: MaaJwks,
     nonce: Option<&[u8]>,
 ) -> Result<serde_json::Value, Error> {
-    let jws = General::from_str(token)
-        .map_err(|_| Error::DecodeError("can't deserialize JWS".to_owned()))?;
+    // Decode header to get kid
+    let header = decode_header(token)
+        .map_err(|e| Error::DecodeError(format!("can't decode JWT header: {}", e)))?;
 
-    if jws.payload.is_none() {
-        return Err(Error::DecodeError("payload not found in JWS".to_owned()));
-    }
+    let kid = header
+        .kid
+        .ok_or_else(|| Error::DecodeError("no kid in JWT header".to_owned()))?;
 
-    if jws.signatures.len() != 1 {
-        return Err(Error::DecodeError("multiple signatures in JWS".to_owned()));
-    }
-
-    let signature = &jws.signatures[0];
-
-    let Some(header) = &signature.protected else {
-        return Err(Error::DecodeError("no header found in JWS".to_owned()));
-    };
-
-    let Protected { oth, .. } = &**header;
-    let Unprotected { kid, .. } = oth;
-
-    let Some(expected_kid) = kid else {
-        return Err(Error::DecodeError("no kid in JWS".to_owned()));
-    };
+    // Find the key in JWKS
     let jwk = jwks
-        .find(expected_kid)
+        .find(&kid)
         .ok_or(Error::MaaResponseError("kid not found in JWKS".to_owned()))?;
-    let pk: RS256PublicKey = jwk.try_into()?;
 
-    let options = nonce.map(|nonce| VerificationOptions {
-        required_nonce: Some(general_purpose::URL_SAFE_NO_PAD.encode(nonce)),
-        ..Default::default()
-    });
+    // Convert JWK to DecodingKey
+    let decoding_key = jwk.to_decoding_key()?;
 
-    let claim: jwt_simple::prelude::JWTClaims<serde_json::Value> = pk
-        .verify_token::<serde_json::Value>(token, options)
-        .map_err(|e| Error::MaaResponseError(format!("failed to verify JWS token: {e}")))?;
+    // Set up validation
+    let mut validation = Validation::new(Algorithm::RS256);
 
-    Ok(claim.custom)
+    // Verify nonce if provided
+    if let Some(_nonce) = nonce {
+        validation.set_required_spec_claims(&["nonce"]);
+        // We'll check the nonce manually after decoding
+    }
+
+    // Decode and verify the token
+    let token_data = decode::<serde_json::Value>(token, &decoding_key, &validation)
+        .map_err(|e| Error::MaaResponseError(format!("failed to verify JWT token: {}", e)))?;
+
+    // Verify nonce if provided
+    if let Some(expected_nonce) = nonce {
+        let expected_nonce_str = general_purpose::URL_SAFE_NO_PAD.encode(expected_nonce);
+        let actual_nonce = token_data
+            .claims
+            .get("nonce")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| Error::MaaResponseError("nonce not found in claims".to_owned()))?;
+
+        if actual_nonce != expected_nonce_str {
+            return Err(Error::MaaResponseError("nonce mismatch".to_owned()));
+        }
+    }
+
+    Ok(token_data.claims)
 }
 
 /// Verify Intel SGX quote on MAA service.
@@ -91,6 +90,7 @@ pub fn verify_sgx_quote(
     mr_enclave: Option<&[u8]>,
     mr_signer: Option<&[u8]>,
 ) -> Result<SgxClaim, Error> {
+    use rand::Rng;
     let mut rng = rand::thread_rng();
 
     let jwks = maa_certificates(maa_url)?;
@@ -151,6 +151,7 @@ pub fn verify_sev_quote(
     report: &[u8],
     amd_cert_chain: &[u8],
 ) -> Result<SevClaim, Error> {
+    use rand::Rng;
     let mut rng = rand::thread_rng();
 
     let jwks = maa_certificates(maa_url)?;
@@ -173,6 +174,7 @@ pub fn verify_sev_quote(
 ///
 /// Either [`CvmClaim`] if success, [`Error`] otherwise.
 pub fn verify_tdx_quote(maa_url: &str, quote: &[u8]) -> Result<TdxClaim, Error> {
+    use rand::Rng;
     let mut rng = rand::thread_rng();
 
     let jwks = maa_certificates(maa_url)?;

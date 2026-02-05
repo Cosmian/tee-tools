@@ -3,7 +3,7 @@ use x509_parser::prelude::X509Extension;
 
 use crate::error::Error;
 
-pub enum SnpOid {
+pub(crate) enum SnpOid {
     BootLoader,
     Tee,
     Snp,
@@ -14,7 +14,7 @@ pub enum SnpOid {
 
 impl SnpOid {
     /// References: https://www.amd.com/content/dam/amd/en/documents/epyc-technical-docs/specifications/57230.pdf
-    pub fn oid(&self) -> Oid {
+    pub(crate) fn oid(&self) -> Oid<'_> {
         match self {
             SnpOid::BootLoader => oid!(1.3.6 .1 .4 .1 .3704 .1 .3 .1),
             SnpOid::Tee => oid!(1.3.6 .1 .4 .1 .3704 .1 .3 .2),

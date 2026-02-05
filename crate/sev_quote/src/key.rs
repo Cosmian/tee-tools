@@ -7,7 +7,7 @@ use crate::error::Error;
 
 /// Generate a key derived from the start measurement
 pub fn get_key(salt: Option<&[u8]>) -> Result<Vec<u8>, Error> {
-    let request = DerivedKey::new(false, GuestFieldSelect(4), 0, 0, 0);
+    let request = DerivedKey::new(false, GuestFieldSelect(4), 0, 0, 0, None);
     let mut fw = Firmware::open()?;
     let derived_key = fw.get_derived_key(None, request)?;
 

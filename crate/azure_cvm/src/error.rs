@@ -6,14 +6,16 @@ pub enum Error {
     AkPubNotFound,
     #[error("BadURLError: {0}")]
     BadURLError(String),
-    #[error("binary parse error")]
-    BinaryParseError(#[from] bincode::Error),
     #[error("DecodeError: {0}")]
     DecodeError(#[from] base64::DecodeError),
     #[error("ImdsResponseError: {0}")]
     ImdsResponseError(String),
+    #[error("InvalidFormat: {0}")]
+    InvalidFormat(String),
     #[error("invalid report type")]
     InvalidReportType,
+    #[error("I/O error")]
+    IoError(#[from] std::io::Error),
     #[error("JsonDecodeError: {0}")]
     JsonDecodeError(String),
     #[error("JSON parse error")]

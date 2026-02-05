@@ -213,9 +213,7 @@ pub fn maa_attest_sev_cvm(
 ///
 /// # External documentation
 ///
-/// See Microsoft attestation tools Python's code [`CVM Attestation Tools`].
-///
-/// [`CVM Attestation Tools`]: https://github.com/Azure/cvm-attestation-tools/blob/main/cvm-attestation/src/verifier.py#L14
+/// See Microsoft's CVM attestation tools (Python) in the `Azure/cvm-attestation-tools` repository.
 pub fn maa_attest_tdx_cvm(
     maa_url: &str,
     nonce: &[u8],

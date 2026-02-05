@@ -76,7 +76,8 @@ pub struct SgxClaim {
 #[serde(rename_all = "kebab-case")]
 pub struct SevClaim {
     pub x_ms_attestation_type: String,
-    pub x_ms_compliance_status: String,
+    #[serde(default)]
+    pub x_ms_compliance_status: Option<String>,
     pub x_ms_policy_hash: String,
     pub x_ms_sevsnpvm_authorkeydigest: String,
     pub x_ms_sevsnpvm_bootloader_svn: u32,

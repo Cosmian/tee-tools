@@ -1,13 +1,86 @@
 use crate::{error::Error, MRSIGNER_SIZE};
-use rsa::{pkcs8::DecodePublicKey, traits::PublicKeyParts, RsaPublicKey};
 use sha2::{Digest, Sha256};
+use spki::SubjectPublicKeyInfoRef;
 
 /// Compute the `MR_SIGNER` from the public enclave certificate (PEM format)
 pub fn compute_mr_signer(pem_public_enclave_cert: &str) -> Result<[u8; MRSIGNER_SIZE], Error> {
-    let public_key = RsaPublicKey::from_public_key_pem(pem_public_enclave_cert)?;
+    // Parse PEM to get the DER-encoded data
+    let pem_data = pem::parse(pem_public_enclave_cert)
+        .map_err(|e| Error::CryptoError(format!("Failed to parse PEM: {}", e)))?;
 
-    let modulus = public_key.n();
-    let mut modulus_bytes = modulus.to_bytes_be();
+    if pem_data.tag() != "PUBLIC KEY" {
+        return Err(Error::CryptoError(format!(
+            "Expected PUBLIC KEY, got {}",
+            pem_data.tag()
+        )));
+    }
+
+    // Parse the SubjectPublicKeyInfo
+    let spki = SubjectPublicKeyInfoRef::try_from(pem_data.contents())
+        .map_err(|e| Error::CryptoError(format!("Failed to parse SPKI: {}", e)))?;
+
+    // Extract the modulus from the RSA public key
+    // RSA public key in DER is SEQUENCE { modulus INTEGER, publicExponent INTEGER }
+    let public_key_bytes = spki.subject_public_key.raw_bytes();
+
+    // Parse the SEQUENCE to extract modulus
+    // Skip the SEQUENCE tag (0x30) and length
+    if public_key_bytes.is_empty() || public_key_bytes[0] != 0x30 {
+        return Err(Error::CryptoError(
+            "Invalid RSA public key format".to_owned(),
+        ));
+    }
+
+    let mut idx = 1;
+    // Parse length (can be short or long form)
+    let _seq_len = if public_key_bytes[idx] & 0x80 == 0 {
+        idx += 1;
+        public_key_bytes[idx - 1] as usize
+    } else {
+        let len_bytes = (public_key_bytes[idx] & 0x7F) as usize;
+        idx += 1;
+        let mut len = 0usize;
+        for _ in 0..len_bytes {
+            len = (len << 8) | public_key_bytes[idx] as usize;
+            idx += 1;
+        }
+        len
+    };
+
+    // Now we should be at the modulus INTEGER tag
+    if public_key_bytes[idx] != 0x02 {
+        return Err(Error::CryptoError(
+            "Expected INTEGER tag for modulus".to_owned(),
+        ));
+    }
+    idx += 1;
+
+    // Parse modulus length
+    let modulus_len = if public_key_bytes[idx] & 0x80 == 0 {
+        let len = public_key_bytes[idx] as usize;
+        idx += 1;
+        len
+    } else {
+        let len_bytes = (public_key_bytes[idx] & 0x7F) as usize;
+        idx += 1;
+        let mut len = 0usize;
+        for _ in 0..len_bytes {
+            len = (len << 8) | public_key_bytes[idx] as usize;
+            idx += 1;
+        }
+        len
+    };
+
+    // Skip leading zero byte if present (used for sign bit)
+    let modulus_start = if public_key_bytes[idx] == 0x00 {
+        idx + 1
+    } else {
+        idx
+    };
+
+    let modulus_end =
+        modulus_start + modulus_len - (if public_key_bytes[idx] == 0x00 { 1 } else { 0 });
+    let mut modulus_bytes = public_key_bytes[modulus_start..modulus_end].to_vec();
     modulus_bytes.reverse();
 
     let mut hash = Sha256::new();
@@ -25,7 +98,7 @@ mod tests {
     use super::compute_mr_signer;
 
     #[test]
-    pub fn test_sgx_compute_mr_signer() {
+    pub(super) fn test_sgx_compute_mr_signer() {
         assert_eq!(
             encode(
                 compute_mr_signer(

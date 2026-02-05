@@ -12,7 +12,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 asn1-rs = { workspace = true }
-bincode = { workspace = true }
 hex = { workspace = true }
 hkdf = { workspace = true }
 log = { workspace = true }
@@ -21,7 +20,7 @@ serde = { workspace = true }
 serde-hex = { workspace = true }
 sev = { workspace = true, features = [
     "snp",
-    "crypto_nossl",
+    "openssl",
     "sev",
 ] }
 sha2 = { workspace = true }

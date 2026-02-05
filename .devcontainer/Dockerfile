@@ -1,5 +1,8 @@
 FROM ghcr.io/cosmian/intel-sgx:2.25
 
+LABEL Name="tee-tools-devcontainer"
+LABEL Version="dev"
+
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 ENV PATH="/root/.cargo/bin:${PATH}"

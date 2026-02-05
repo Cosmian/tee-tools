@@ -9,7 +9,7 @@ use sev::firmware::host::TcbVersion;
 
 /// Identifier of the SEV prod name.
 #[derive(PartialEq, Clone, Copy)]
-pub enum SevProdName {
+pub(crate) enum SevProdName {
     Milan,
 }
 
