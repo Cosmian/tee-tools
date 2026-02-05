@@ -2998,7 +2998,6 @@ dependencies = [
  "sha2",
  "test-log",
  "thiserror 2.0.18",
- "tracing-subscriber",
  "tss-esapi",
 ]
 
