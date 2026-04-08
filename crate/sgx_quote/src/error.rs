@@ -29,5 +29,5 @@ pub enum Error {
     #[error(transparent)]
     CryptoP256Error(#[from] p256::ecdsa::Error),
     #[error(transparent)]
-    CryptoRSAError(#[from] rsa::pkcs8::spki::Error),
+    CryptoPKCS8Error(#[from] p256::pkcs8::spki::Error),
 }

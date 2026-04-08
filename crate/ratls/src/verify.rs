@@ -3,7 +3,7 @@ use p256::ecdsa::VerifyingKey;
 use sha2::{Digest, Sha256};
 use spki::DecodePublicKey;
 use std::str::FromStr;
-use tee_attestation::{verify_quote, TeePolicy};
+use tee_attestation::{TeePolicy, verify_quote};
 
 use crate::{
     error::Error,
@@ -13,7 +13,7 @@ use crate::{
 };
 use x509_parser::{
     oid_registry::Oid,
-    prelude::{parse_x509_pem, X509Certificate},
+    prelude::{X509Certificate, parse_x509_pem},
 };
 
 /// Build the report data from ratls public key and some extra data
@@ -119,13 +119,15 @@ mod tests {
         let mrenclave = mrenclave.as_slice().try_into().unwrap();
         let public_signer_key = include_str!("../data/signer-key.pem");
 
-        assert!(verify_ratls(
-            cert,
-            Some(&mut TeePolicy::Sgx(
-                SgxQuoteVerificationPolicy::new(mrenclave, public_signer_key).unwrap()
-            ))
-        )
-        .is_ok());
+        assert!(
+            verify_ratls(
+                cert,
+                Some(&mut TeePolicy::Sgx(
+                    SgxQuoteVerificationPolicy::new(mrenclave, public_signer_key).unwrap()
+                ))
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -138,23 +140,27 @@ mod tests {
                 .try_into()
                 .unwrap();
 
-        assert!(verify_ratls(
-            cert,
-            Some(&mut TeePolicy::Sev(SevQuoteVerificationPolicy::new(
-                measurement
-            )))
-        )
-        .is_ok());
+        assert!(
+            verify_ratls(
+                cert,
+                Some(&mut TeePolicy::Sev(SevQuoteVerificationPolicy::new(
+                    measurement
+                )))
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn test_ratls_tdx_verify_ratls() {
         let cert = include_bytes!("../data/tdx-cert.ratls.pem");
 
-        assert!(verify_ratls(
-            cert,
-            Some(&mut TeePolicy::Tdx(TdxQuoteVerificationPolicy::new()))
-        )
-        .is_ok());
+        assert!(
+            verify_ratls(
+                cert,
+                Some(&mut TeePolicy::Tdx(TdxQuoteVerificationPolicy::new()))
+            )
+            .is_ok()
+        );
     }
 }

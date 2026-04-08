@@ -1,5 +1,5 @@
 pub mod base64url_serde {
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     use serde::Serializer;
     use serde::{Deserialize as _, Deserializer};
 

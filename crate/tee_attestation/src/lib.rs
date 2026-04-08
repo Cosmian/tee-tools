@@ -177,21 +177,21 @@ pub fn get_quote(report_data: Option<&[u8]>) -> Result<Vec<u8>, Error> {
                     &report_data
                         .try_into()
                         .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
-                )?)
+                )?);
             }
             TeeType::Sgx => {
                 return Ok(sgx_quote::quote::get_quote(
                     &report_data
                         .try_into()
                         .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
-                )?)
+                )?);
             }
             TeeType::Tdx => {
                 return Ok(tdx_quote::quote::get_quote(
                     &report_data
                         .try_into()
                         .map_err(|_| Error::InvalidFormat("Report data malformed".to_owned()))?,
-                )?)
+                )?);
             }
             TeeType::AzSev | TeeType::AzTdx => {
                 // No low-level access to the device on Microsoft Azure!
@@ -201,19 +201,10 @@ pub fn get_quote(report_data: Option<&[u8]>) -> Result<Vec<u8>, Error> {
 
                     match hcl_report.report_type() {
                         azure_cvm::ReportType::Snp => {
-                            let mut snp_report = hcl_report.report_slice().to_vec();
-                            let amd_cert_chain = azure_cvm::imds::get_amd_cert_chain()?;
-                            snp_report.extend(amd_cert_chain);
-                            return Ok(snp_report);
+                            return Ok(azure_cvm::get_snp_quote(hcl_report)?);
                         }
                         azure_cvm::ReportType::Tdx => {
-                            let td_report: azure_cvm::attestation_report::TdReport =
-                                hcl_report.try_into().map_err(|_| {
-                                    Error::InvalidFormat(
-                                        "failed to parse Intel TD report".to_owned(),
-                                    )
-                                })?;
-                            return Ok(azure_cvm::imds::get_td_quote(&td_report)?);
+                            return Ok(azure_cvm::get_td_quote(hcl_report)?);
                         }
                     }
                 } else {

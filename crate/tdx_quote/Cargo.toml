@@ -13,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 hex = { workspace = true }
 log = { workspace = true }
-nix = { version = "0.29", features = ["ioctl"] }
+nix = { version = "0.31", features = ["ioctl"] }
 p256 = { workspace = true }
 pccs_client = { path = "../pccs_client" }
 scroll = { workspace = true }
@@ -21,7 +21,7 @@ serde = { workspace = true }
 serde-hex = { workspace = true }
 sgx_quote = { path = "../sgx_quote" }
 sha2 = { workspace = true }
-tdx-attest-rs = { git = "https://github.com/intel/SGXDataCenterAttestationPrimitives.git", tag = "DCAP_1.24" }
+tdx-attest-rs = { git = "https://github.com/intel/confidential-computing.tee.dcap.git", tag = "DCAP_1.25" }
 thiserror = { workspace = true }
 
 [dev-dependencies]

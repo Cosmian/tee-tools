@@ -17,7 +17,6 @@ hkdf = { workspace = true }
 log = { workspace = true }
 p256 = { workspace = true }
 pccs_client = { path = "../pccs_client" }
-rsa = { workspace = true }
 scroll = { workspace = true }
 serde = { workspace = true }
 serde-hex = { workspace = true }
