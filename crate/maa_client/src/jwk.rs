@@ -8,7 +8,7 @@ use jose_jwk::{
     jose_b64::serde::Bytes,
     jose_jwa::{Algorithm, Signing},
 };
-use jwt_simple::prelude::*;
+use jsonwebtoken::DecodingKey;
 use serde::Deserialize;
 use x509_cert::{
     der::asn1::UintRef,
@@ -94,8 +94,8 @@ impl TryFrom<MaaJwk> for Jwk {
     }
 }
 
-/// Conversion from [`MaaJwk`] to [`jwt_simple::algorithms::RS256PublicKey`].
-impl TryFrom<MaaJwk> for RS256PublicKey {
+/// Conversion from [`MaaJwk`] to [`jsonwebtoken::DecodingKey`].
+impl TryFrom<MaaJwk> for DecodingKey {
     type Error = Error;
 
     fn try_from(bad_jwk: MaaJwk) -> Result<Self, Self::Error> {
@@ -127,9 +127,7 @@ impl TryFrom<MaaJwk> for RS256PublicKey {
                 )
             })?;
 
-        Ok(RS256PublicKey::from_der(spki_der.as_bytes())
-            .map_err(|_| Error::MaaResponseError("RSA public key not found".to_owned()))?
-            .with_key_id(&bad_jwk.kid))
+        Ok(DecodingKey::from_rsa_der(spki_der.as_bytes()))
     }
 }
 
