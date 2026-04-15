@@ -1,10 +1,10 @@
 use crate::error::Error;
 
 use tss_esapi::{
+    Context,
     handles::KeyHandle,
     interface_types::{algorithm::HashingAlgorithm, session_handles::AuthSession},
     structures::{Attest, Data, HashScheme, PcrSelectionList, Signature, SignatureScheme},
-    Context,
 };
 
 use std::convert::TryFrom;

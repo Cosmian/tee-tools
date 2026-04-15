@@ -265,7 +265,7 @@ pub fn get_qe_identity(pcs_url: &str, tee: IntelTeeType) -> Result<(Vec<u8>, Vec
 #[cfg(test)]
 mod tests {
     use super::*;
-    use x509_cert::{crl::CertificateList, der::Decode, Certificate};
+    use x509_cert::{Certificate, crl::CertificateList, der::Decode};
 
     #[test]
     fn test_intel_root_ca_crl() {

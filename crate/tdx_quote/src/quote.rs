@@ -11,7 +11,7 @@ use log::debug;
 use pccs_client::IntelTeeType;
 use scroll::Pread;
 use sgx_quote::{
-    quote::{ReportBody, QUOTE_QE_REPORT_SIZE},
+    quote::{QUOTE_QE_REPORT_SIZE, ReportBody},
     verify::verify_collaterals,
 };
 use tdx_attest_rs::{tdx_att_get_quote, tdx_report_data_t, tdx_uuid_t};
@@ -496,7 +496,9 @@ mod tests {
         assert_eq!(quote.header.version, 4);
         assert_eq!(
             quote.header.vendor_id,
-            [147, 154, 114, 51, 247, 156, 76, 169, 148, 10, 13, 179, 149, 127, 6, 7]
+            [
+                147, 154, 114, 51, 247, 156, 76, 169, 148, 10, 13, 179, 149, 127, 6, 7
+            ]
         );
         assert_eq!(
             quote.report_body.tee_tcb_svn,

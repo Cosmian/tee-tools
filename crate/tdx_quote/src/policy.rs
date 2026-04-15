@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_hex::{SerHexOpt, Strict};
 
-use crate::{quote::Quote, REPORT_DATA_SIZE};
+use crate::{REPORT_DATA_SIZE, quote::Quote};
 
 #[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Copy)]
 /// Values to compare with the tdx quote header values

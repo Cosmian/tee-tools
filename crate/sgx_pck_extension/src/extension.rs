@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
 
-use asn1::{oid, ObjectIdentifier, SequenceOf};
+use asn1::{ObjectIdentifier, SequenceOf, oid};
 use asn1_rs::Oid;
 use x509_parser::parse_x509_certificate;
 use x509_parser::pem::parse_x509_pem;
@@ -284,8 +284,24 @@ impl<'a> TryFrom<SequenceOf<'a, SgxExtension<'a>>> for Tcb {
 
         // rustfmt doesn't like this next line,
         // but it's the only way to get simultaneous mutable references to each element!
-        let [compsvn01, compsvn02, compsvn03, compsvn04, compsvn05, compsvn06, compsvn07, compsvn08, compsvn09, compsvn10, compsvn11, compsvn12, compsvn13, compsvn14, compsvn15, compsvn16] =
-            &mut compsvn;
+        let [
+            compsvn01,
+            compsvn02,
+            compsvn03,
+            compsvn04,
+            compsvn05,
+            compsvn06,
+            compsvn07,
+            compsvn08,
+            compsvn09,
+            compsvn10,
+            compsvn11,
+            compsvn12,
+            compsvn13,
+            compsvn14,
+            compsvn15,
+            compsvn16,
+        ] = &mut compsvn;
 
         parse_extensions(
             value,

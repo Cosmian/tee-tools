@@ -2,9 +2,9 @@ use std::str::FromStr;
 
 use crate::{error::Error, jwk::MaaJwks};
 
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use reqwest::StatusCode;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 /// Fetch Microsoft certificates from Microsoft Azure Attestation (MAA) API.
 ///
