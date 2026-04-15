@@ -3,8 +3,8 @@ name = "tls-cert"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-license-file.workspace = true
 repository.workspace = true
+description = "Get TLS peer cerrtificate for inspection"
 
 [dependencies]
 rustls = "0.23"

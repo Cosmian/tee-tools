@@ -24,7 +24,7 @@ serde_json = { workspace = true }
 sgx_pck_extension = { path = "../sgx_pck_extension" }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
-x509-parser = { workspace = true, features = ["verify"] }
+x509-parser = { workspace = true, features = ["verify-aws"] }
 
 [dev-dependencies]
 env_logger = "0.11"
