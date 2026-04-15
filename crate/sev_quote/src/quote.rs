@@ -292,7 +292,7 @@ mod tests {
 
         let quote = parse_quote(raw_report).unwrap();
         let report_data = [0u8; 64];
-        let measurement: [u8; 48] = hex::decode("41a95b6fbe794f1d3bb919934adc5e44583b57e4a5c3f489ffe775ecb8e23d3947001e886277751ba06ae793c2c8904d").unwrap().try_into().unwrap();
+        let measurement: [u8; 48] = hex::decode("14195fde36852b69f2ac17166ebf3223351b1c34814f110339412652819073e061ed7c47e6e00d02a817aeb4992ce20d").unwrap().try_into().unwrap();
 
         verify_quote(
             &quote,

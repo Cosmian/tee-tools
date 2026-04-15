@@ -134,33 +134,29 @@ mod tests {
     fn test_ratls_sev_verify_ratls() {
         let cert = include_bytes!("../data/sev-cert.ratls.pem");
 
-        let measurement =
-            hex::decode(b"59ead9b42664d54fda54f707670386f61b1d3bd34e2da8c8f9ac067e617a0aae4623304a4aa98bb30756affb4b6c0a05")
+        let measurement: [u8; 48] =
+            hex::decode(b"12068361369cf9179bb6ac08572b7e15ed0bc8abb698cb04d4f584f7ff512a4c2081c1f5b105351dbd45c035a7d6a3a5")
                 .unwrap()
                 .try_into()
                 .unwrap();
 
-        assert!(
-            verify_ratls(
-                cert,
-                Some(&mut TeePolicy::Sev(SevQuoteVerificationPolicy::new(
-                    measurement
-                )))
-            )
-            .is_ok()
-        );
+        verify_ratls(
+            cert,
+            Some(&mut TeePolicy::Sev(SevQuoteVerificationPolicy::new(
+                measurement,
+            ))),
+        )
+        .unwrap();
     }
 
     #[test]
     fn test_ratls_tdx_verify_ratls() {
         let cert = include_bytes!("../data/tdx-cert.ratls.pem");
 
-        assert!(
-            verify_ratls(
-                cert,
-                Some(&mut TeePolicy::Tdx(TdxQuoteVerificationPolicy::new()))
-            )
-            .is_ok()
-        );
+        verify_ratls(
+            cert,
+            Some(&mut TeePolicy::Tdx(TdxQuoteVerificationPolicy::new())),
+        )
+        .unwrap();
     }
 }
