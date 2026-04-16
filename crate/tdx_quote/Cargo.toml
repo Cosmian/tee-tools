@@ -13,7 +13,6 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 hex = { workspace = true }
 log = { workspace = true }
-nix = { version = "0.31", features = ["ioctl"] }
 p256 = { workspace = true }
 pccs_client = { path = "../pccs_client" }
 scroll = { workspace = true }
