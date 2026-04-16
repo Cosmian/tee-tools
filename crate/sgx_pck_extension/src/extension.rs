@@ -2,6 +2,7 @@
 // Copyright 2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
+#![allow(clippy::result_large_err)]
 
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
