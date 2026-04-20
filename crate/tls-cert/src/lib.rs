@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use rustls::{
     DigitallySignedStruct, SignatureScheme,
     client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
@@ -24,7 +26,7 @@ pub enum Error {
 }
 
 #[derive(Debug)]
-pub(crate) struct NoVerifier;
+pub struct NoVerifier;
 
 impl ServerCertVerifier for NoVerifier {
     fn verify_server_cert(
@@ -36,6 +38,79 @@ impl ServerCertVerifier for NoVerifier {
         _now: UnixTime,
     ) -> Result<ServerCertVerified, rustls::Error> {
         Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        rustls::crypto::aws_lc_rs::default_provider()
+            .signature_verification_algorithms
+            .supported_schemes()
+            .to_vec()
+    }
+}
+
+/// A TLS verifier adding the ability to match the leaf certificate with a trusted one.
+#[derive(Debug)]
+pub struct LeafCertificateVerifier {
+    // The certificate we expect to see in the TLS connection
+    expected_cert: CertificateDer<'static>,
+    // A default verifier to run anyway
+    default_verifier: Arc<dyn ServerCertVerifier>,
+}
+
+impl LeafCertificateVerifier {
+    pub fn new(
+        expected_cert: &CertificateDer<'static>,
+        default_verifier: Arc<dyn ServerCertVerifier>,
+    ) -> Self {
+        Self {
+            expected_cert: expected_cert.clone(),
+            default_verifier,
+        }
+    }
+}
+
+impl ServerCertVerifier for LeafCertificateVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
+        ocsp_response: &[u8],
+        now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        // Verify the leaf certificate
+        if !end_entity.eq(&self.expected_cert) {
+            return Err(rustls::Error::General(
+                "Leaf certificate doesn't match the expected one".to_owned(),
+            ));
+        }
+
+        // Now proceed with typical verifications
+        self.default_verifier.verify_server_cert(
+            end_entity,
+            intermediates,
+            server_name,
+            ocsp_response,
+            now,
+        )
     }
 
     fn verify_tls12_signature(
