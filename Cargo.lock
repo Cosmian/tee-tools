@@ -182,7 +182,7 @@ dependencies = [
 
 [[package]]
 name = "azure_cvm"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "base64 0.22.1",
  "jose-jwk",
@@ -1398,7 +1398,7 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "maa_client"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "base64 0.22.1",
  "hex",
@@ -1662,7 +1662,7 @@ dependencies = [
 
 [[package]]
 name = "pccs_client"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "hex",
  "reqwest",
@@ -1879,7 +1879,7 @@ checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
 
 [[package]]
 name = "ratls"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "const-oid 0.9.6",
  "der",
@@ -2246,7 +2246,7 @@ dependencies = [
 
 [[package]]
 name = "sev_quote"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "asn1-rs",
  "env_logger",
@@ -2264,7 +2264,7 @@ dependencies = [
 
 [[package]]
 name = "sgx_pck_extension"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "asn1",
  "asn1-rs",
@@ -2274,7 +2274,7 @@ dependencies = [
 
 [[package]]
 name = "sgx_quote"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "chrono",
  "env_logger",
@@ -2465,7 +2465,7 @@ dependencies = [
 
 [[package]]
 name = "tdx_quote"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "env_logger",
  "hex",
@@ -2483,7 +2483,7 @@ dependencies = [
 
 [[package]]
 name = "tee_attestation"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "azure_cvm",
  "env_logger",
@@ -2604,7 +2604,7 @@ dependencies = [
 
 [[package]]
 name = "tls-cert"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "rustls",
  "rustls-pki-types",
@@ -2704,7 +2704,7 @@ checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 
 [[package]]
 name = "tpm_quote"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "env_logger",
  "hex",

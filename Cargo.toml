@@ -15,7 +15,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.6.2"
+version = "1.7.0"
 edition = "2024"
 license = "BUSL-1.1" # "Business Source License 1.1"
 license-file = "LICENSE"
