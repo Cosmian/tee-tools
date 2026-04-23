@@ -37,9 +37,10 @@ p256 = { version = "0.13", features = ["arithmetic", "pkcs8", "ecdsa-core"] }
 pem = "3.0"
 reqwest = { version = "0.13", default-features = false, features = [
     "json",
-    "native-tls",
+    "rustls",
     "blocking",
 ] }
+rustls = { version = "0.23", features = ["aws_lc_rs"] }
 scroll = { version = "0.13", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }

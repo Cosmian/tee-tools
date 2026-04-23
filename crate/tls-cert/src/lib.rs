@@ -140,9 +140,13 @@ impl ServerCertVerifier for LeafCertificateVerifier {
 }
 
 pub fn get_tls_certificates(host: &str, port: u16) -> Result<Vec<Vec<u8>>, Error> {
+    let provider = std::sync::Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+
     // Build TLS config with NO verification
     let config = std::sync::Arc::new(
-        rustls::ClientConfig::builder()
+        rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .map_err(Error::RustTLSError)?
             .dangerous()
             .with_custom_certificate_verifier(std::sync::Arc::new(NoVerifier))
             .with_no_client_auth(),
