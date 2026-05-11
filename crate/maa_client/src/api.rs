@@ -158,7 +158,7 @@ pub fn maa_attest_sgx_enclave(
     maa_attest(
         maa_url,
         "/attest/SgxEnclave",
-        &[("api-version", "2022-08-01")],
+        &[("api-version", "2025-06-01")],
         payload,
     )
 }
@@ -200,7 +200,7 @@ pub fn maa_attest_sev_cvm(
     maa_attest(
         maa_url,
         "/attest/SevSnpVm",
-        &[("api-version", "2022-08-01")],
+        &[("api-version", "2025-06-01")],
         payload,
     )
 }
@@ -242,7 +242,7 @@ pub fn maa_attest_tdx_cvm(
     maa_attest(
         maa_url,
         "/attest/TdxVm",
-        &[("api-version", "2023-04-01-preview")],
+        &[("api-version", "2025-06-01")],
         payload,
     )
 }
