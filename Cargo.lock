@@ -2654,6 +2654,7 @@ dependencies = [
  "env_logger",
  "hex",
  "maa_client",
+ "pem",
  "serde",
  "sev_quote",
  "sgx_quote",

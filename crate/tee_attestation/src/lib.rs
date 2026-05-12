@@ -235,7 +235,13 @@ pub fn az_verify_quote(raw_quote: &[u8], policy: &TeePolicy) -> Result<(), Error
     match policy {
         TeePolicy::Sev(p) => {
             let report = &raw_quote[0..azure_cvm::SNP_REPORT_SIZE];
-            let amd_cert_chain = maa_client::utils::parse_certificate_chain(raw_quote).join("");
+
+            let amd_cert_chain = sev_quote::quote::parse_quote(raw_quote)?
+                .certs
+                .iter()
+                .map(|cert| pem::encode(&pem::Pem::new("CERTIFICATE", cert.data.clone())))
+                .collect::<Vec<_>>()
+                .join("");
             let sev_claim =
                 maa_client::verify_sev_quote(maa_url, report, amd_cert_chain.as_bytes())?;
 

@@ -22,6 +22,7 @@ path = "src/verify_report.rs"
 azure_cvm = { path = "../azure_cvm" }
 hex = { workspace = true }
 maa_client = { path = "../maa_client" }
+pem = { workspace = true }
 serde = { workspace = true }
 sev_quote = { path = "../sev_quote" }
 sgx_quote = { path = "../sgx_quote" }
