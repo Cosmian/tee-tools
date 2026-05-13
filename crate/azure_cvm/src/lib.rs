@@ -278,9 +278,9 @@ mod tests {
 
         let bytes: &[u8] = include_bytes!("../data/hcl_report_tdx.bin");
         let hcl_report = HclReport::new(bytes.to_vec()).unwrap();
-        let ak = hcl_report.ak_pub().unwrap();
-        println!("{:?}", hcl_report.report_type());
-        println!("{:?}", hcl_report.attestation_report);
-        println!("{:?}", ak);
+        let _ak = hcl_report.ak_pub().unwrap();
+        // println!("{:?}", hcl_report.report_type());
+        // println!("{:?}", hcl_report.attestation_report);
+        // println!("{:?}", ak);
     }
 }
