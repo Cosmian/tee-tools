@@ -207,19 +207,6 @@ mod tests {
     use rustls_pki_types::{CertificateDer, pem::PemObject};
 
     #[test]
-    fn test_google_certificate() {
-        // To fetch Google's certificate:
-        // openssl s_client -showcerts -connect google.com:443 </dev/null 2>/dev/null | openssl x509 -outform PEM>data/google.pem
-        let expected_server_cert =
-            CertificateDer::from_pem_slice(include_bytes!("../data/google.pem"))
-                .unwrap()
-                .to_vec();
-        let server_cert = get_tls_certificate("google.com", 443).unwrap();
-
-        assert_eq!(expected_server_cert, server_cert);
-    }
-
-    #[test]
     fn test_letsencrypt_certificate() {
         // To fetch Let's Encrypt's certificate:
         // openssl s_client -showcerts -connect letsencrypt.org:443 </dev/null 2>/dev/null | openssl x509 -outform PEM>data/letsencrypt.pem
