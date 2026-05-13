@@ -18,5 +18,5 @@ sev = { workspace = true }
 sev_quote = { path = "../sev_quote" }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
-tss-esapi = "7.6"
+tss-esapi = { workspace = true }
 zerocopy = { version = "0.8", features = ["derive"] }

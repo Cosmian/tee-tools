@@ -50,5 +50,6 @@ sev = { git = "https://github.com/virtee/sev", rev = "2b4e157", features = ["sev
 sha2 = "0.11"
 spki = "0.7"
 thiserror = "2.0"
+tss-esapi = "7.7"
 x509-cert = { version = "0.2", features = ["builder", "hazmat"] }
 x509-parser = "0.18"
