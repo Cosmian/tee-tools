@@ -100,13 +100,6 @@ pub struct HclReport {
 impl HclReport {
     /// Parse a HCL report from a byte slice.
     pub fn new(bytes: Vec<u8>) -> Result<Self, Error> {
-        // let attestation_report: AttestationReport = {
-        //     let mut report = [0u8; size_of::<AttestationReport>()];
-        //     report.copy_from_slice(&bytes);
-
-        //     unsafe { transmute(report) }
-        // };
-
         let attestation_report = AttestationReport::try_ref_from_prefix(&bytes)
             .map_err(|_| Error::InvalidReportType)?
             .0 // .0 is &AttestationReport, .1 would be the remaining bytes
@@ -242,7 +235,6 @@ pub fn get_snp_quote(report: HclReport) -> Result<Vec<u8>, Error> {
     match report.report_type() {
         ReportType::Tdx => Err(Error::InvalidReportType),
         ReportType::Snp => {
-            // let mut snp_report = report.report_slice().to_vec();
             let mut quote = sev_quote::quote::Quote::try_from(report.report_slice())?;
 
             let amd_cert_chain = imds::get_amd_cert_chain()?;
@@ -269,18 +261,8 @@ mod tests {
 
     #[test]
     fn parse_hcl_report() {
-        // let bytes: &[u8] = include_bytes!("../data/hcl_report_sev.bin");
-        // let hcl_report = HclReport::new(bytes.to_vec()).unwrap();
-        // let ak = hcl_report.ak_pub().unwrap();
-        // println!("{:?}", hcl_report.report_type());
-        // println!("{:?}", hcl_report.attestation_report);
-        // println!("{:?}", ak);
-
         let bytes: &[u8] = include_bytes!("../data/hcl_report_tdx.bin");
         let hcl_report = HclReport::new(bytes.to_vec()).unwrap();
         let _ak = hcl_report.ak_pub().unwrap();
-        // println!("{:?}", hcl_report.report_type());
-        // println!("{:?}", hcl_report.attestation_report);
-        // println!("{:?}", ak);
     }
 }
