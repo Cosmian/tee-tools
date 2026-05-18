@@ -168,8 +168,6 @@ pub fn verify_quote(quote: &Quote, policy: &SevQuoteVerificationPolicy) -> Resul
     // Check the policy
     verify_quote_policy(&quote.report, policy)?;
 
-    // let chain = Chain::from_cert_table_der(quote.certs.clone())?;
-
     // Try to build the Chain object by dealing with various cases.
     let vlek = quote
         .certs
@@ -266,26 +264,8 @@ mod tests {
         }
     }
 
-    // #[test]
-    // fn test_sev_verify_quote1() {
-    //     init();
-
-    //     let raw_report = include_bytes!("../data/report-vlek-aws.bin");
-    //     let quote = parse_quote(raw_report).unwrap();
-
-    //     verify_quote(
-    //         &quote,
-    //         &SevQuoteVerificationPolicy {
-    //             measurement: Some(hex::decode("ac3e4d8516634a5e0180338175cc827c90061414bd699b5af30712caa291fa34ed06cc622792bc1177126bd115a826ba").unwrap().try_into().unwrap()),
-    //             report_data: Some(hex::decode("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap().try_into().unwrap()) ,
-    //             ..Default::default()
-    //         }
-    //     )
-    //     .unwrap();
-    // }
-
     #[test]
-    fn test_sev_verify_quote2() {
+    fn test_sev_verify_quote() {
         init();
 
         let raw_report = include_bytes!("../data/report-ark-ask-vcek.bin");
@@ -304,23 +284,4 @@ mod tests {
         )
         .unwrap();
     }
-
-    // #[test]
-    // fn test_sev_verify_quote3() {
-    //     init();
-
-    //     let raw_report = include_bytes!("../data/report-no-cert.bin");
-
-    //     let quote = parse_quote(raw_report).unwrap();
-
-    //     verify_quote(
-    //         &quote,
-    //         &SevQuoteVerificationPolicy {
-    //             measurement: Some(hex::decode("41a95b6fbe794f1d3bb919934adc5e44583b57e4a5c3f489ffe775ecb8e23d3947001e886277751ba06ae793c2c8904d").unwrap().try_into().unwrap()),
-    //             report_data: Some(*b"0123456789abcdef012345678789abcdef0123456789abcdef00000000000000") ,
-    //             ..Default::default()
-    //         }
-    //     )
-    //     .unwrap();
-    // }
 }
