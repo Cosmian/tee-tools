@@ -74,7 +74,7 @@ impl TryFrom<&[u8]> for Quote {
         let mut offset = REPORT_SIZE + 4;
 
         for _ in 0..num_certs {
-            if offset >= bytes.len() {
+            if offset + 4 >= bytes.len() {
                 return Err(Self::Error::QuoteCertError);
             }
 
