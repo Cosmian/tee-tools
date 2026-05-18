@@ -8,7 +8,7 @@ description = "Get TLS peer cerrtificate for inspection"
 
 [dependencies]
 rustls = { workspace = true }
-thiserror = "2.0"
+thiserror = { workspace = true }
 url = "2.5"
 
 [dev-dependencies]
