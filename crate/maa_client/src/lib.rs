@@ -12,14 +12,11 @@ use crate::{
     error::Error,
 };
 
-use base64::{engine::general_purpose, Engine};
+use base64::{Engine, engine::general_purpose};
 use jose_jws::{General, Protected, Unprotected};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use jwk::MaaJwks;
-use jwt_simple::{
-    common::VerificationOptions,
-    prelude::{RS256PublicKey, RSAPublicKeyLike},
-    reexports::rand::{self, Rng as _},
-};
+use rand::RngExt as _;
 
 /// Verify JSON Web Signature (JWS) using JSON Web Key Set (JWKS).
 ///
@@ -57,18 +54,36 @@ pub fn verify_rs256_jws(
     let jwk = jwks
         .find(expected_kid)
         .ok_or(Error::MaaResponseError("kid not found in JWKS".to_owned()))?;
-    let pk: RS256PublicKey = jwk.try_into()?;
+    let pk: DecodingKey = jwk.try_into()?;
 
-    let options = nonce.map(|nonce| VerificationOptions {
-        required_nonce: Some(general_purpose::URL_SAFE_NO_PAD.encode(nonce)),
-        ..Default::default()
-    });
+    let mut validation = Validation::new(Algorithm::RS256);
+    validation.validate_aud = false;
+    if nonce.is_some() {
+        validation.set_required_spec_claims(&["exp", "nonce"]);
+    } else {
+        validation.set_required_spec_claims(&["exp"]);
+    }
 
-    let claim: jwt_simple::prelude::JWTClaims<serde_json::Value> = pk
-        .verify_token::<serde_json::Value>(token, options)
+    let token_data = decode::<serde_json::Value>(token, &pk, &validation)
         .map_err(|e| Error::MaaResponseError(format!("failed to verify JWS token: {e}")))?;
 
-    Ok(claim.custom)
+    if let Some(nonce) = nonce {
+        let expected_nonce = general_purpose::URL_SAFE_NO_PAD.encode(nonce);
+        let actual_nonce = token_data
+            .claims
+            .get("nonce")
+            .and_then(|v| v.as_str())
+            .ok_or(Error::MaaResponseError(
+                "nonce not found in token claims".to_owned(),
+            ))?;
+        if actual_nonce != expected_nonce {
+            return Err(Error::MaaResponseError(
+                "nonce mismatch in token".to_owned(),
+            ));
+        }
+    }
+
+    Ok(token_data.claims)
 }
 
 /// Verify Intel SGX quote on MAA service.
@@ -91,10 +106,10 @@ pub fn verify_sgx_quote(
     mr_enclave: Option<&[u8]>,
     mr_signer: Option<&[u8]>,
 ) -> Result<SgxClaim, Error> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let jwks = maa_certificates(maa_url)?;
-    let nonce: [u8; 32] = rng.gen();
+    let nonce: [u8; 32] = rng.random();
     let token = maa_attest_sgx_enclave(maa_url, &nonce, quote, enclave_held_data)?;
     let payload = verify_rs256_jws(&token, jwks, Some(&nonce))?;
     let sgx_claim = serde_json::from_value::<SgxClaim>(payload).unwrap();
@@ -112,24 +127,24 @@ pub fn verify_sgx_quote(
         ));
     }
 
-    if let Some(mr_enclave) = mr_enclave {
-        if mr_enclave.len() == sgx_claim.sgx_mrenclave.len()
-            && mr_enclave != sgx_claim.sgx_mrenclave
-        {
-            return Err(Error::SgxVerificationError(format!(
-                "MRENCLAVE differs: {:?} != {:?}",
-                mr_enclave, sgx_claim.sgx_mrenclave
-            )));
-        }
+    if let Some(mr_enclave) = mr_enclave
+        && mr_enclave.len() == sgx_claim.sgx_mrenclave.len()
+        && mr_enclave != sgx_claim.sgx_mrenclave
+    {
+        return Err(Error::SgxVerificationError(format!(
+            "MRENCLAVE differs: {:?} != {:?}",
+            mr_enclave, sgx_claim.sgx_mrenclave
+        )));
     }
 
-    if let Some(mr_signer) = mr_signer {
-        if mr_signer.len() == sgx_claim.sgx_mrsigner.len() && mr_signer != sgx_claim.sgx_mrsigner {
-            return Err(Error::SgxVerificationError(format!(
-                "MRSIGNER differs: {:?} != {:?}",
-                mr_signer, sgx_claim.sgx_mrsigner
-            )));
-        }
+    if let Some(mr_signer) = mr_signer
+        && mr_signer.len() == sgx_claim.sgx_mrsigner.len()
+        && mr_signer != sgx_claim.sgx_mrsigner
+    {
+        return Err(Error::SgxVerificationError(format!(
+            "MRSIGNER differs: {:?} != {:?}",
+            mr_signer, sgx_claim.sgx_mrsigner
+        )));
     }
 
     Ok(sgx_claim)
@@ -151,10 +166,10 @@ pub fn verify_sev_quote(
     report: &[u8],
     amd_cert_chain: &[u8],
 ) -> Result<SevClaim, Error> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let jwks = maa_certificates(maa_url)?;
-    let nonce: [u8; 32] = rng.gen();
+    let nonce: [u8; 32] = rng.random();
     let payload = serde_json::json!({"SnpReport": general_purpose::URL_SAFE_NO_PAD.encode(report), "VcekCertChain": general_purpose::URL_SAFE_NO_PAD.encode(amd_cert_chain)}).to_string();
     let token = maa_attest_sev_cvm(maa_url, &nonce, payload.as_bytes(), None)?;
     let jws_payload = verify_rs256_jws(&token, jwks, Some(&nonce))?;
@@ -173,10 +188,10 @@ pub fn verify_sev_quote(
 ///
 /// Either [`CvmClaim`] if success, [`Error`] otherwise.
 pub fn verify_tdx_quote(maa_url: &str, quote: &[u8]) -> Result<TdxClaim, Error> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let jwks = maa_certificates(maa_url)?;
-    let nonce: [u8; 32] = rng.gen();
+    let nonce: [u8; 32] = rng.random();
     let token = maa_attest_tdx_cvm(maa_url, &nonce, quote, None)?;
     let jws_payload = verify_rs256_jws(&token, jwks, Some(&nonce))?;
 

@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use crate::{attestation_report::TdReport, error::Error};
 
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use zerocopy::IntoBytes;
 
 // IMDS endpoint for VCEK certificate, AMD SEV CA and AMD Root CA
@@ -66,7 +66,7 @@ pub fn get_td_quote(td_report: &TdReport) -> Result<Vec<u8>, Error> {
     }
 }
 
-pub fn get_amd_cert_chain() -> Result<Vec<u8>, Error> {
+pub fn get_amd_cert_chain() -> Result<Vec<Vec<u8>>, Error> {
     let url = reqwest::Url::from_str(IMDS_THIM_ENDPOINT)
         .map_err(|e| Error::ImdsResponseError(e.to_string()))?;
 
@@ -83,7 +83,7 @@ pub fn get_amd_cert_chain() -> Result<Vec<u8>, Error> {
                 .json::<serde_json::Map<String, serde_json::Value>>()
                 .map_err(|_| Error::ImdsResponseError("can't deserialize JSON".to_owned()))?;
 
-            // AMD SEV CA + AMD Root CA
+            // AMD SEV CA (AMD SEV Key) + AMD Root CA (AMD Root Key)
             let cert_chain = body
                 .get("certificateChain")
                 .ok_or(Error::ImdsResponseError(
@@ -93,6 +93,15 @@ pub fn get_amd_cert_chain() -> Result<Vec<u8>, Error> {
                 .ok_or(Error::ImdsResponseError(
                     "Certificate chain is not a PEM string".to_owned(),
                 ))?;
+
+            // cert_chain[0] = ASK, cert_chain[1] = ARK
+            let mut cert_chain = pem::parse_many(cert_chain)
+                .map_err(|_| {
+                    Error::ImdsResponseError("can't parse PEM with ASK and ARK".to_owned())
+                })?
+                .iter()
+                .map(|pem| pem.to_string().as_bytes().to_vec())
+                .collect::<Vec<Vec<u8>>>();
 
             // Version Chip-Endorsement Key (VCEK)
             // Certified by AMD SEV CA and signs the attestation report.
@@ -104,9 +113,13 @@ pub fn get_amd_cert_chain() -> Result<Vec<u8>, Error> {
                 .as_str()
                 .ok_or(Error::ImdsResponseError(
                     "VCEK certificate is not a PEM string".to_owned(),
-                ))?;
+                ))?
+                .as_bytes()
+                .to_vec();
 
-            Ok(format!("{vcek}{cert_chain}").as_bytes().to_vec())
+            cert_chain.insert(0, vcek);
+
+            Ok(cert_chain)
         }
         s => Err(Error::ImdsResponseError(format!(
             "HTTP status code: {}, Body: {}",

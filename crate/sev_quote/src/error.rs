@@ -9,7 +9,9 @@ pub enum Error {
     #[error(transparent)]
     IOError(#[from] std::io::Error),
     #[error("The attestation report is malformed")]
-    QuoteMalformed,
+    QuoteError,
+    #[error("Failed to parse certificates in quote")]
+    QuoteCertError,
     #[error(transparent)]
     RequestAPIError(#[from] reqwest::Error),
     #[error("{0}")]

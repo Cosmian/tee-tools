@@ -9,6 +9,7 @@ pub mod quote;
 mod snp_extension;
 pub mod verify;
 
+pub const REPORT_SIZE: usize = 1184;
 pub const REPORT_DATA_SIZE: usize = 64;
 
 #[must_use]

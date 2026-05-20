@@ -375,17 +375,19 @@ mod tests {
                 .unwrap();
         let mr_signer = compute_mr_signer(include_str!("../data/signer-key.pem")).unwrap();
 
-        assert!(verify_quote(
-            raw_quote,
-            &SgxQuoteVerificationPolicy {
-                header: SgxQuoteHeaderVerificationPolicy::default(),
-                body: SgxQuoteBodyVerificationPolicy {
-                    mr_enclave: Some(mrenclave),
-                    mr_signer: Some(mr_signer),
-                    ..Default::default()
+        assert!(
+            verify_quote(
+                raw_quote,
+                &SgxQuoteVerificationPolicy {
+                    header: SgxQuoteHeaderVerificationPolicy::default(),
+                    body: SgxQuoteBodyVerificationPolicy {
+                        mr_enclave: Some(mrenclave),
+                        mr_signer: Some(mr_signer),
+                        ..Default::default()
+                    }
                 }
-            }
-        )
-        .is_ok());
+            )
+            .is_ok()
+        );
     }
 }

@@ -1,8 +1,8 @@
 use std::str::FromStr;
 
 use tss_esapi::{
-    abstraction::nv, handles::NvIndexTpmHandle, interface_types::resource_handles::NvAuth,
-    tcti_ldr::TctiNameConf, Context,
+    Context, abstraction::nv, handles::NvIndexTpmHandle, interface_types::resource_handles::NvAuth,
+    tcti_ldr::TctiNameConf,
 };
 
 use crate::error::Error;

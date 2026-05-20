@@ -4,7 +4,7 @@ use crate::error::Error;
 
 use log::debug;
 
-use reqwest::{blocking::get, StatusCode, Url};
+use reqwest::{StatusCode, Url, blocking::get};
 use sev::firmware::host::TcbVersion;
 
 /// Identifier of the SEV prod name.

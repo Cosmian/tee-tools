@@ -3,7 +3,7 @@ use p256::ecdsa::VerifyingKey;
 use sha2::{Digest, Sha256};
 use spki::DecodePublicKey;
 use std::str::FromStr;
-use tee_attestation::{verify_quote, TeePolicy};
+use tee_attestation::{TeePolicy, verify_quote};
 
 use crate::{
     error::Error,
@@ -13,7 +13,7 @@ use crate::{
 };
 use x509_parser::{
     oid_registry::Oid,
-    prelude::{parse_x509_pem, X509Certificate},
+    prelude::{X509Certificate, parse_x509_pem},
 };
 
 /// Build the report data from ratls public key and some extra data
@@ -119,42 +119,44 @@ mod tests {
         let mrenclave = mrenclave.as_slice().try_into().unwrap();
         let public_signer_key = include_str!("../data/signer-key.pem");
 
-        assert!(verify_ratls(
-            cert,
-            Some(&mut TeePolicy::Sgx(
-                SgxQuoteVerificationPolicy::new(mrenclave, public_signer_key).unwrap()
-            ))
-        )
-        .is_ok());
+        assert!(
+            verify_ratls(
+                cert,
+                Some(&mut TeePolicy::Sgx(
+                    SgxQuoteVerificationPolicy::new(mrenclave, public_signer_key).unwrap()
+                ))
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn test_ratls_sev_verify_ratls() {
         let cert = include_bytes!("../data/sev-cert.ratls.pem");
 
-        let measurement =
-            hex::decode(b"59ead9b42664d54fda54f707670386f61b1d3bd34e2da8c8f9ac067e617a0aae4623304a4aa98bb30756affb4b6c0a05")
+        let measurement: [u8; 48] =
+            hex::decode(b"12068361369cf9179bb6ac08572b7e15ed0bc8abb698cb04d4f584f7ff512a4c2081c1f5b105351dbd45c035a7d6a3a5")
                 .unwrap()
                 .try_into()
                 .unwrap();
 
-        assert!(verify_ratls(
+        verify_ratls(
             cert,
             Some(&mut TeePolicy::Sev(SevQuoteVerificationPolicy::new(
-                measurement
-            )))
+                measurement,
+            ))),
         )
-        .is_ok());
+        .unwrap();
     }
 
     #[test]
     fn test_ratls_tdx_verify_ratls() {
         let cert = include_bytes!("../data/tdx-cert.ratls.pem");
 
-        assert!(verify_ratls(
+        verify_ratls(
             cert,
-            Some(&mut TeePolicy::Tdx(TdxQuoteVerificationPolicy::new()))
+            Some(&mut TeePolicy::Tdx(TdxQuoteVerificationPolicy::new())),
         )
-        .is_ok());
+        .unwrap();
     }
 }

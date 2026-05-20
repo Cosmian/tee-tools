@@ -1,17 +1,24 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+use std::{convert::TryFrom, ops::Range};
+
 use crate::{
     attestation_report::{SnpReport, TdReport},
     error::Error,
     tpm::get_hcl_report,
 };
+
 use jose_jwk::Jwk;
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
+use sev::{
+    firmware::host::{CertTableEntry, CertType},
+    parser::ByteParser,
+};
+
 use sha2::{Digest, Sha256};
-use std::convert::TryFrom;
-use std::ops::Range;
+use zerocopy::{Immutable, KnownLayout, TryFromBytes};
 
 pub mod attestation_report;
 pub mod error;
@@ -19,8 +26,8 @@ pub mod imds;
 pub mod tpm;
 
 const HCL_AKPUB_KEY_ID: &str = "HCLAkPub";
-pub const TD_REPORT_SIZE: usize = std::mem::size_of::<TdReport>();
-pub const SNP_REPORT_SIZE: usize = std::mem::size_of::<SnpReport>();
+pub const TD_REPORT_SIZE: usize = 1024;
+pub const SNP_REPORT_SIZE: usize = 1184;
 const MAX_REPORT_SIZE: usize = SNP_REPORT_SIZE; // 1184 bytes for SEV-SNP and 1024 bytes for TDX
 const SNP_REPORT_TYPE: u32 = 2;
 const TDX_REPORT_TYPE: u32 = 4;
@@ -37,7 +44,9 @@ struct VarDataKeys {
 }
 
 #[repr(u32)]
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(
+    TryFromBytes, KnownLayout, Immutable, Copy, Clone, Debug, Serialize, Deserialize, PartialEq,
+)]
 enum IgvmHashType {
     Invalid = 0,
     Sha256,
@@ -46,7 +55,7 @@ enum IgvmHashType {
 }
 
 #[repr(C)]
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(TryFromBytes, KnownLayout, Immutable, Clone, Debug, Serialize, Deserialize, PartialEq)]
 struct IgvmRequestData {
     data_size: u32,
     version: u32,
@@ -57,7 +66,7 @@ struct IgvmRequestData {
 }
 
 #[repr(C)]
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(TryFromBytes, KnownLayout, Immutable, Clone, Debug, Serialize, Deserialize, PartialEq)]
 struct AttestationHeader {
     signature: u32,
     version: u32,
@@ -68,18 +77,12 @@ struct AttestationHeader {
 }
 
 #[repr(C)]
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(TryFromBytes, KnownLayout, Immutable, Clone, Debug, Serialize, Deserialize, PartialEq)]
 struct AttestationReport {
     header: AttestationHeader,
     #[serde(with = "BigArray")]
     hw_report: [u8; MAX_REPORT_SIZE],
     hcl_data: IgvmRequestData,
-}
-
-pub struct HclReport {
-    bytes: Vec<u8>,
-    attestation_report: AttestationReport,
-    report_type: ReportType,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -88,15 +91,20 @@ pub enum ReportType {
     Snp,
 }
 
-pub enum HwReport {
-    Tdx(TdReport),
-    Snp(SnpReport),
+pub struct HclReport {
+    bytes: Vec<u8>,
+    attestation_report: AttestationReport,
+    report_type: ReportType,
 }
 
 impl HclReport {
     /// Parse a HCL report from a byte slice.
     pub fn new(bytes: Vec<u8>) -> Result<Self, Error> {
-        let attestation_report: AttestationReport = bincode::deserialize(&bytes)?;
+        let attestation_report = AttestationReport::try_ref_from_prefix(&bytes)
+            .map_err(|_| Error::InvalidReportType)?
+            .0 // .0 is &AttestationReport, .1 would be the remaining bytes
+            .to_owned();
+
         let report_type = match attestation_report.hcl_data.report_type {
             TDX_REPORT_TYPE => ReportType::Tdx,
             SNP_REPORT_TYPE => ReportType::Snp,
@@ -169,8 +177,8 @@ impl TryFrom<&HclReport> for TdReport {
         if hcl_report.report_type != ReportType::Tdx {
             return Err(Error::InvalidReportType);
         }
-        let bytes = hcl_report.report_slice();
-        let td_report = bincode::deserialize::<TdReport>(bytes)?;
+        let td_report = TdReport::try_read_from_bytes(hcl_report.report_slice())
+            .map_err(|_| Error::InvalidReportType)?;
         Ok(td_report)
     }
 }
@@ -190,8 +198,7 @@ impl TryFrom<&HclReport> for SnpReport {
         if hcl_report.report_type != ReportType::Snp {
             return Err(Error::InvalidReportType);
         }
-        let bytes = hcl_report.report_slice();
-        let snp_report = bincode::deserialize::<SnpReport>(bytes)?;
+        let snp_report = SnpReport::from_bytes(hcl_report.report_slice())?;
         Ok(snp_report)
     }
 }
@@ -205,13 +212,47 @@ impl TryFrom<HclReport> for SnpReport {
 }
 
 pub fn is_az_cvm() -> Option<ReportType> {
-    if let Ok(raw_hcl_report) = get_hcl_report() {
-        if let Ok(hcl_report) = HclReport::new(raw_hcl_report) {
-            return Some(hcl_report.report_type());
-        }
+    if let Ok(raw_hcl_report) = get_hcl_report()
+        && let Ok(hcl_report) = HclReport::new(raw_hcl_report)
+    {
+        return Some(hcl_report.report_type());
     }
 
     None
+}
+
+pub fn get_td_quote(report: HclReport) -> Result<Vec<u8>, Error> {
+    match report.report_type() {
+        ReportType::Tdx => {
+            let td_report: TdReport = report.try_into()?;
+            imds::get_td_quote(&td_report)
+        }
+        ReportType::Snp => Err(Error::InvalidReportType), // SEV-SNP quote is not applicable for TDX
+    }
+}
+
+pub fn get_snp_quote(report: HclReport) -> Result<Vec<u8>, Error> {
+    match report.report_type() {
+        ReportType::Tdx => Err(Error::InvalidReportType),
+        ReportType::Snp => {
+            let mut quote = sev_quote::quote::Quote::try_from(report.report_slice())?;
+
+            let amd_cert_chain = imds::get_amd_cert_chain()?;
+
+            let cert_table: Vec<CertTableEntry> = amd_cert_chain
+                .iter()
+                .zip([CertType::VCEK, CertType::ASK, CertType::ARK])
+                .map(|(pem_bytes, cert_type)| {
+                    let pem = pem::parse(pem_bytes).expect("invalid PEM");
+                    CertTableEntry::new(cert_type, pem.contents().to_vec())
+                })
+                .collect();
+
+            quote.certs = cert_table;
+
+            Ok(quote.try_into()?)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -220,18 +261,8 @@ mod tests {
 
     #[test]
     fn parse_hcl_report() {
-        let bytes: &[u8] = include_bytes!("../data/hcl_report_sev.bin");
-        let hcl_report = HclReport::new(bytes.to_vec()).unwrap();
-        let ak = hcl_report.ak_pub().unwrap();
-        println!("{:?}", hcl_report.report_type());
-        println!("{:?}", hcl_report.attestation_report);
-        println!("{:?}", ak);
-
         let bytes: &[u8] = include_bytes!("../data/hcl_report_tdx.bin");
         let hcl_report = HclReport::new(bytes.to_vec()).unwrap();
-        let ak = hcl_report.ak_pub().unwrap();
-        println!("{:?}", hcl_report.report_type());
-        println!("{:?}", hcl_report.attestation_report);
-        println!("{:?}", ak);
+        let _ak = hcl_report.ak_pub().unwrap();
     }
 }

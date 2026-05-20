@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::policy::{SgxQuoteBodyVerificationPolicy, SgxQuoteHeaderVerificationPolicy};
-use crate::quote::{EcdsaSigData, QuoteHeader, ReportBody, QUOTE_BODY_SIZE};
+use crate::quote::{EcdsaSigData, QUOTE_BODY_SIZE, QuoteHeader, ReportBody};
 
 use chrono::{NaiveDateTime, Utc};
 
@@ -11,8 +11,8 @@ use p256::elliptic_curve::sec1::FromEncodedPoint;
 use p256::pkcs8::DecodePublicKey;
 use p256::{AffinePoint, EncodedPoint};
 use pccs_client::{
-    get_pck_crl, get_qe_identity, get_root_ca_crl, get_root_ca_crl_from_uri, get_tcbinfo,
-    IntelTeeType, PckCa,
+    IntelTeeType, PckCa, get_pck_crl, get_qe_identity, get_root_ca_crl, get_root_ca_crl_from_uri,
+    get_tcbinfo,
 };
 use serde::{Deserialize, Serialize};
 use serde_hex::{SerHex, StrictCap};
@@ -20,13 +20,13 @@ use sgx_pck_extension::SgxPckExtension;
 use sha2::{Digest, Sha256};
 use x509_parser::certificate::X509Certificate;
 use x509_parser::extensions::{GeneralName, ParsedExtension};
-use x509_parser::oid_registry::asn1_rs::oid;
 use x509_parser::oid_registry::Oid;
+use x509_parser::oid_registry::asn1_rs::oid;
 use x509_parser::parse_x509_certificate;
 use x509_parser::prelude::{FromDer, Pem};
 use x509_parser::revocation_list::CertificateRevocationList;
 
-const CRL_DISTRIBUTION_POINTS_EXTENSION_OID: Oid = oid!(2.5.29 .31);
+const CRL_DISTRIBUTION_POINTS_EXTENSION_OID: Oid = oid!(2.5.29.31);
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -704,32 +704,32 @@ pub(crate) fn verify_quote_header_policy(
         )));
     }
 
-    if let Some(minimum_qe_svn) = policy.minimum_qe_svn {
-        if header.qe_svn < minimum_qe_svn {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation QE security-version number '{}' is lower than the set value '{}'",
-                header.qe_svn, minimum_qe_svn
-            )));
-        }
+    if let Some(minimum_qe_svn) = policy.minimum_qe_svn
+        && header.qe_svn < minimum_qe_svn
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation QE security-version number '{}' is lower than the set value '{}'",
+            header.qe_svn, minimum_qe_svn
+        )));
     }
 
-    if let Some(minimum_pce_svn) = policy.minimum_pce_svn {
-        if header.pce_svn < minimum_pce_svn {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation PCE security-version number '{}' is lower than the set value '{}'",
-                header.pce_svn, minimum_pce_svn
-            )));
-        }
+    if let Some(minimum_pce_svn) = policy.minimum_pce_svn
+        && header.pce_svn < minimum_pce_svn
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation PCE security-version number '{}' is lower than the set value '{}'",
+            header.pce_svn, minimum_pce_svn
+        )));
     }
 
-    if let Some(vendor_id) = policy.qe_vendor_id {
-        if header.vendor_id != vendor_id {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation QE Vendor ID '{}' is not equal to the set value '{}'",
-                hex::encode(header.vendor_id),
-                hex::encode(vendor_id)
-            )));
-        }
+    if let Some(vendor_id) = policy.qe_vendor_id
+        && header.vendor_id != vendor_id
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation QE Vendor ID '{}' is not equal to the set value '{}'",
+            hex::encode(header.vendor_id),
+            hex::encode(vendor_id)
+        )));
     }
 
     Ok(())
@@ -743,33 +743,33 @@ pub(crate) fn verify_quote_body_policy(
     debug!("Verifiying quote body against the policy...");
 
     // Check the MRENCLAVE
-    if let Some(mr_enclave) = policy.mr_enclave {
-        if body.mr_enclave != mr_enclave {
-            return Err(Error::VerificationFailure(format!(
-                "MRENCLAVE miss-matches expected value ({})",
-                hex::encode(body.mr_enclave),
-            )));
-        }
+    if let Some(mr_enclave) = policy.mr_enclave
+        && body.mr_enclave != mr_enclave
+    {
+        return Err(Error::VerificationFailure(format!(
+            "MRENCLAVE miss-matches expected value ({})",
+            hex::encode(body.mr_enclave),
+        )));
     }
 
     // Check the MRSIGNER
-    if let Some(mr_signer) = policy.mr_signer {
-        if body.mr_signer != mr_signer {
-            return Err(Error::VerificationFailure(format!(
-                "MRSIGNER miss-matches expected value ({})",
-                hex::encode(body.mr_signer),
-            )));
-        }
+    if let Some(mr_signer) = policy.mr_signer
+        && body.mr_signer != mr_signer
+    {
+        return Err(Error::VerificationFailure(format!(
+            "MRSIGNER miss-matches expected value ({})",
+            hex::encode(body.mr_signer),
+        )));
     }
 
-    if let Some(report_data) = &policy.report_data {
-        if &body.report_data != report_data {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation report data '{}' is not equal to the set value '{}'",
-                hex::encode(body.report_data),
-                hex::encode(report_data)
-            )));
-        }
+    if let Some(report_data) = &policy.report_data
+        && &body.report_data != report_data
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation report data '{}' is not equal to the set value '{}'",
+            hex::encode(body.report_data),
+            hex::encode(report_data)
+        )));
     }
 
     Ok(())

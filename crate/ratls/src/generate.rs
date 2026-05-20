@@ -1,11 +1,11 @@
-use der::{asn1::Ia5String, pem::LineEnding, EncodePem};
+use der::{EncodePem, asn1::Ia5String, pem::LineEnding};
 
 use ecdsa::elliptic_curve::ScalarPrimitive;
+use p256::SecretKey;
 use p256::ecdsa::DerSignature;
 use p256::pkcs8::EncodePrivateKey;
-use p256::SecretKey;
-use rand_chacha::rand_core::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
+use rand_chacha::rand_core::{RngCore, SeedableRng};
 
 use spki::{EncodePublicKey, SubjectPublicKeyInfoOwned};
 use std::str::FromStr;
@@ -14,7 +14,7 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     time::Duration,
 };
-use tee_attestation::{get_key, get_quote, guess_tee, TeeType};
+use tee_attestation::{TeeType, get_key, get_quote, guess_tee};
 use x509_cert::ext::pkix::BasicConstraints;
 
 use crate::verify::forge_report_data;
@@ -27,7 +27,7 @@ use crate::{
 use x509_cert::{
     builder::{Builder, CertificateBuilder, Profile},
     der::asn1::OctetString,
-    ext::pkix::{name::GeneralName, SubjectAltName},
+    ext::pkix::{SubjectAltName, name::GeneralName},
     name::Name,
     serial_number::SerialNumber,
     time::Validity,

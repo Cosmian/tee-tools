@@ -3,12 +3,12 @@ use std::collections::HashMap;
 use crate::{
     error::Error,
     policy::SevQuoteVerificationPolicy,
-    snp_extension::{check_cert_ext_byte, check_cert_ext_bytes, SnpOid},
+    snp_extension::{SnpOid, check_cert_ext_byte, check_cert_ext_bytes},
 };
 
 use asn1_rs::{FromDer, Oid};
 use log::debug;
-use sev::certs::snp::{ca, Chain};
+use sev::certs::snp::{Chain, ca};
 use sev::{certs::snp::Verifiable, firmware::guest::AttestationReport};
 use x509_parser::{
     self,
@@ -104,13 +104,12 @@ pub(crate) fn verify_chain_certificates(cert_chain: &Chain) -> Result<(), Error>
 /// - Chip ID
 pub(crate) fn verify_tcb(report: &AttestationReport, cert: &X509Certificate) -> Result<(), Error> {
     let extensions: HashMap<Oid, &X509Extension> = cert.extensions_map()?;
-    if let Some(cert_bl) = extensions.get(&SnpOid::BootLoader.oid()) {
-        if !check_cert_ext_byte(cert_bl, report.reported_tcb.bootloader)? {
-            return Err(Error::VerificationFailure(
-                "Report TCB Boot Loader and Certificate Boot Loader mismatch encountered."
-                    .to_owned(),
-            ));
-        }
+    if let Some(cert_bl) = extensions.get(&SnpOid::BootLoader.oid())
+        && !check_cert_ext_byte(cert_bl, report.reported_tcb.bootloader)?
+    {
+        return Err(Error::VerificationFailure(
+            "Report TCB Boot Loader and Certificate Boot Loader mismatch encountered.".to_owned(),
+        ));
     }
 
     if let Some(cert_tee) = extensions.get(&SnpOid::Tee.oid()) {
@@ -209,23 +208,23 @@ pub(crate) fn verify_quote_policy(
     debug!("Verifiying quote against the policy...");
 
     // Check the measurement
-    if let Some(measurement) = policy.measurement {
-        if quote.measurement != measurement {
-            return Err(Error::VerificationFailure(format!(
-                "Measurement miss-matches expected value ({})",
-                hex::encode(quote.measurement),
-            )));
-        }
+    if let Some(measurement) = policy.measurement
+        && quote.measurement != measurement
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Measurement miss-matches expected value ({})",
+            hex::encode(quote.measurement),
+        )));
     }
 
-    if let Some(report_data) = &policy.report_data {
-        if &quote.report_data != report_data {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation report data '{}' is not equal to the set value '{}'",
-                hex::encode(quote.report_data),
-                hex::encode(report_data)
-            )));
-        }
+    if let Some(report_data) = &policy.report_data
+        && &quote.report_data != report_data
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation report data '{}' is not equal to the set value '{}'",
+            hex::encode(quote.report_data),
+            hex::encode(report_data)
+        )));
     }
 
     Ok(())

@@ -1,4 +1,4 @@
-use asn1_rs::{oid, Oid};
+use asn1_rs::{Oid, oid};
 use x509_parser::prelude::X509Extension;
 
 use crate::error::Error;
@@ -14,13 +14,13 @@ pub enum SnpOid {
 
 impl SnpOid {
     /// References: https://www.amd.com/content/dam/amd/en/documents/epyc-technical-docs/specifications/57230.pdf
-    pub fn oid(&self) -> Oid {
+    pub fn oid(&self) -> Oid<'_> {
         match self {
-            SnpOid::BootLoader => oid!(1.3.6 .1 .4 .1 .3704 .1 .3 .1),
-            SnpOid::Tee => oid!(1.3.6 .1 .4 .1 .3704 .1 .3 .2),
-            SnpOid::Snp => oid!(1.3.6 .1 .4 .1 .3704 .1 .3 .3),
-            SnpOid::Ucode => oid!(1.3.6 .1 .4 .1 .3704 .1 .3 .8),
-            SnpOid::HwId => oid!(1.3.6 .1 .4 .1 .3704 .1 .4),
+            SnpOid::BootLoader => oid!(1.3.6.1.4.1.3704.1.3.1),
+            SnpOid::Tee => oid!(1.3.6.1.4.1.3704.1.3.2),
+            SnpOid::Snp => oid!(1.3.6.1.4.1.3704.1.3.3),
+            SnpOid::Ucode => oid!(1.3.6.1.4.1.3704.1.3.8),
+            SnpOid::HwId => oid!(1.3.6.1.4.1.3704.1.4),
         }
     }
 }

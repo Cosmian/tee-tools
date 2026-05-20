@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::policy::{TdxQuoteBodyVerificationPolicy, TdxQuoteHeaderVerificationPolicy};
 use crate::quote::{
-    EcdsaSigData, QuoteHeader, TdxReportBody, QUOTE_HEADER_SIZE, QUOTE_REPORT_BODY_SIZE,
+    EcdsaSigData, QUOTE_HEADER_SIZE, QUOTE_REPORT_BODY_SIZE, QuoteHeader, TdxReportBody,
 };
 
 use log::debug;
@@ -35,7 +35,9 @@ pub(crate) fn verify_quote_signature(
     raw_quote: &[u8],
     signature: &EcdsaSigData,
 ) -> Result<(), Error> {
-    debug!("Verifying Header and TD Quote Body using attestation key and signature present in the quote");
+    debug!(
+        "Verifying Header and TD Quote Body using attestation key and signature present in the quote"
+    );
     let pubkey = [vec![0x04], signature.attest_pub_key.to_vec()].concat();
     let pubkey = EncodedPoint::from_bytes(pubkey).map_err(|e| Error::CryptoError(e.to_string()))?;
     let point = Option::from(AffinePoint::from_encoded_point(&pubkey)).ok_or_else(|| {
@@ -82,32 +84,32 @@ pub(crate) fn verify_quote_header_policy(
         )));
     }
 
-    if let Some(minimum_qe_svn) = policy.minimum_qe_svn {
-        if header.qe_svn < minimum_qe_svn {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation QE security-version number '{}' is lower than the set value '{}'",
-                header.qe_svn, minimum_qe_svn
-            )));
-        }
+    if let Some(minimum_qe_svn) = policy.minimum_qe_svn
+        && header.qe_svn < minimum_qe_svn
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation QE security-version number '{}' is lower than the set value '{}'",
+            header.qe_svn, minimum_qe_svn
+        )));
     }
 
-    if let Some(minimum_pce_svn) = policy.minimum_pce_svn {
-        if header.pce_svn < minimum_pce_svn {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation PCE security-version number '{}' is lower than the set value '{}'",
-                header.pce_svn, minimum_pce_svn
-            )));
-        }
+    if let Some(minimum_pce_svn) = policy.minimum_pce_svn
+        && header.pce_svn < minimum_pce_svn
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation PCE security-version number '{}' is lower than the set value '{}'",
+            header.pce_svn, minimum_pce_svn
+        )));
     }
 
-    if let Some(vendor_id) = policy.qe_vendor_id {
-        if header.vendor_id != vendor_id {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation QE Vendor ID '{}' is not equal to the set value '{}'",
-                hex::encode(header.vendor_id),
-                hex::encode(vendor_id)
-            )));
-        }
+    if let Some(vendor_id) = policy.qe_vendor_id
+        && header.vendor_id != vendor_id
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation QE Vendor ID '{}' is not equal to the set value '{}'",
+            hex::encode(header.vendor_id),
+            hex::encode(vendor_id)
+        )));
     }
 
     Ok(())
@@ -120,39 +122,38 @@ pub(crate) fn verify_quote_body_policy(
 ) -> Result<(), Error> {
     debug!("Verifiying quote body against the policy...");
 
-    if let Some(minimum_tee_tcb_svn) = policy.minimum_tee_tcb_svn {
-        if body
+    if let Some(minimum_tee_tcb_svn) = policy.minimum_tee_tcb_svn
+        && body
             .tee_tcb_svn
             .iter()
             .zip(minimum_tee_tcb_svn.iter())
             .any(|(item1, item2)| item1 < item2)
-        {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation TEE security-version number '{}' is lower than the set value '{}'",
-                hex::encode(body.tee_tcb_svn),
-                hex::encode(minimum_tee_tcb_svn)
-            )));
-        }
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation TEE security-version number '{}' is lower than the set value '{}'",
+            hex::encode(body.tee_tcb_svn),
+            hex::encode(minimum_tee_tcb_svn)
+        )));
     }
 
-    if let Some(mr_seam) = policy.mr_seam {
-        if body.mr_seam != mr_seam {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation MR SEAM '{}' is not equal to the set value '{}'",
-                hex::encode(body.mr_seam),
-                hex::encode(mr_seam)
-            )));
-        }
+    if let Some(mr_seam) = policy.mr_seam
+        && body.mr_seam != mr_seam
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation MR SEAM '{}' is not equal to the set value '{}'",
+            hex::encode(body.mr_seam),
+            hex::encode(mr_seam)
+        )));
     }
 
-    if let Some(td_attributes) = policy.td_attributes {
-        if body.td_attributes != td_attributes {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation TD Attributes '{}' is not equal to the set value '{}'",
-                hex::encode(body.td_attributes),
-                hex::encode(td_attributes)
-            )));
-        }
+    if let Some(td_attributes) = policy.td_attributes
+        && body.td_attributes != td_attributes
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation TD Attributes '{}' is not equal to the set value '{}'",
+            hex::encode(body.td_attributes),
+            hex::encode(td_attributes)
+        )));
     }
 
     let td_attributes = u64::from_le_bytes(body.td_attributes);
@@ -172,13 +173,13 @@ pub(crate) fn verify_quote_body_policy(
         )));
     }
 
-    if let Some(xfam) = policy.xfam {
-        if body.xfam != xfam {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation XFAM '{}' is not equal to the set value '{}'",
-                body.xfam, xfam
-            )));
-        }
+    if let Some(xfam) = policy.xfam
+        && body.xfam != xfam
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation XFAM '{}' is not equal to the set value '{}'",
+            body.xfam, xfam
+        )));
     }
 
     if body.xfam & XFAM_FIXED1 != XFAM_FIXED1 {
@@ -195,54 +196,54 @@ pub(crate) fn verify_quote_body_policy(
         )));
     }
 
-    if let Some(mr_td) = policy.mr_td {
-        if body.mr_td != mr_td {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation MR TD '{}' is not equal to the set value '{}'",
-                hex::encode(body.mr_td),
-                hex::encode(mr_td)
-            )));
-        }
+    if let Some(mr_td) = policy.mr_td
+        && body.mr_td != mr_td
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation MR TD '{}' is not equal to the set value '{}'",
+            hex::encode(body.mr_td),
+            hex::encode(mr_td)
+        )));
     }
 
-    if let Some(mr_config_id) = policy.mr_config_id {
-        if body.mr_config_id != mr_config_id {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation MR Config ID '{}' is not equal to the set value '{}'",
-                hex::encode(body.mr_config_id),
-                hex::encode(mr_config_id)
-            )));
-        }
+    if let Some(mr_config_id) = policy.mr_config_id
+        && body.mr_config_id != mr_config_id
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation MR Config ID '{}' is not equal to the set value '{}'",
+            hex::encode(body.mr_config_id),
+            hex::encode(mr_config_id)
+        )));
     }
 
-    if let Some(mr_owner) = policy.mr_owner {
-        if body.mr_owner != mr_owner {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation MR Owner'{}' is not equal to the set value '{}'",
-                hex::encode(body.mr_owner),
-                hex::encode(mr_owner)
-            )));
-        }
+    if let Some(mr_owner) = policy.mr_owner
+        && body.mr_owner != mr_owner
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation MR Owner'{}' is not equal to the set value '{}'",
+            hex::encode(body.mr_owner),
+            hex::encode(mr_owner)
+        )));
     }
 
-    if let Some(mr_owner_config) = policy.mr_owner_config {
-        if body.mr_owner_config != mr_owner_config {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation MR Owner Config '{}' is not equal to the set value '{}'",
-                hex::encode(body.mr_owner_config),
-                hex::encode(mr_owner_config)
-            )));
-        }
+    if let Some(mr_owner_config) = policy.mr_owner_config
+        && body.mr_owner_config != mr_owner_config
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation MR Owner Config '{}' is not equal to the set value '{}'",
+            hex::encode(body.mr_owner_config),
+            hex::encode(mr_owner_config)
+        )));
     }
 
-    if let Some(report_data) = policy.report_data {
-        if body.report_data != report_data {
-            return Err(Error::VerificationFailure(format!(
-                "Attestation report data '{}' is not equal to the set value '{}'",
-                hex::encode(body.report_data),
-                hex::encode(report_data)
-            )));
-        }
+    if let Some(report_data) = policy.report_data
+        && body.report_data != report_data
+    {
+        return Err(Error::VerificationFailure(format!(
+            "Attestation report data '{}' is not equal to the set value '{}'",
+            hex::encode(body.report_data),
+            hex::encode(report_data)
+        )));
     }
 
     Ok(())

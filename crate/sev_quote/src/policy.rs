@@ -1,4 +1,4 @@
-use crate::{quote::Quote, REPORT_DATA_SIZE};
+use crate::{REPORT_DATA_SIZE, quote::Quote};
 use serde::{Deserialize, Serialize};
 use serde_hex::{SerHexOpt, Strict};
 

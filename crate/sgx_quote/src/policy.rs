@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_hex::{SerHexOpt, Strict};
 
 use crate::{
-    error::Error, mrsigner::compute_mr_signer, quote::Quote, MRENCLAVE_SIZE, MRSIGNER_SIZE,
-    REPORT_DATA_SIZE,
+    MRENCLAVE_SIZE, MRSIGNER_SIZE, REPORT_DATA_SIZE, error::Error, mrsigner::compute_mr_signer,
+    quote::Quote,
 };
 
 #[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Copy)]

@@ -9,6 +9,8 @@ pub enum Error {
     CvmVerificationError(String),
     #[error("DecodeError: {0}")]
     DecodeError(String),
+    #[error(transparent)]
+    DerError(#[from] x509_cert::der::Error),
     #[error("DeserError: {0}")]
     DeserError(#[from] serde_json::Error),
     #[error("MaaResponseError: {0}")]

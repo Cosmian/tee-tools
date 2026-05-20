@@ -1,12 +1,12 @@
-use crate::key::{get_key_from_persistent_handle, TPM_AK_NVINDEX};
+use crate::key::{TPM_AK_NVINDEX, get_key_from_persistent_handle};
 use error::Error;
 use policy::TpmPolicy;
 use std::convert::TryInto;
 use tss_esapi::{
+    Context,
     interface_types::algorithm::HashingAlgorithm,
     structures::{Attest, AttestInfo, PcrSelectionListBuilder, PcrSlot, Public, Signature},
     traits::{Marshall, UnMarshall},
-    Context,
 };
 use verify::{verify_pcr_value, verify_quote_policy, verify_quote_signature};
 
@@ -144,7 +144,7 @@ mod tests {
 
     use crate::{get_quote, policy::TpmPolicy, verify_quote};
     use test_log::test;
-    use tss_esapi::{tcti_ldr::TctiNameConf, Context};
+    use tss_esapi::{Context, tcti_ldr::TctiNameConf};
 
     #[test]
     fn test_tpm_get_quote() {
@@ -168,17 +168,19 @@ mod tests {
         let sig = include_bytes!("../data/pcr_quote.sig");
         let pk = include_bytes!("../data/ak.pub");
 
-        assert!(verify_quote(
-            quote,
-            sig,
-            pk,
-            Some(&[]),
-            &hex::decode("CF0BEEC1CEE65650DF8E89FF535A901E8C8F6180").unwrap(),
-            &TpmPolicy {
-                reset_count: Some(25),
-                restart_count: Some(0)
-            },
-        )
-        .is_ok());
+        assert!(
+            verify_quote(
+                quote,
+                sig,
+                pk,
+                Some(&[]),
+                &hex::decode("CF0BEEC1CEE65650DF8E89FF535A901E8C8F6180").unwrap(),
+                &TpmPolicy {
+                    reset_count: Some(25),
+                    restart_count: Some(0)
+                },
+            )
+            .is_ok()
+        );
     }
 }

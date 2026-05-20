@@ -1,11 +1,11 @@
 use crate::error::Error;
 
 use tss_esapi::{
+    Context,
     abstraction::nv,
     handles::{KeyHandle, NvIndexTpmHandle, PersistentTpmHandle, TpmHandle},
     interface_types::resource_handles::NvAuth,
     structures::Public,
-    Context,
 };
 
 pub const TPM_EK_NVINDEX: u32 = 0x8100_0050;

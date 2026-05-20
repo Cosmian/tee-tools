@@ -10,12 +10,13 @@ members = [
     "crate/sgx_pck_extension",
     "crate/tdx_quote",
     "crate/tee_attestation",
+    "crate/tls-cert",
     "crate/tpm_quote",
 ]
 
 [workspace.package]
-version = "1.6.2"
-edition = "2021"
+version = "2.0.0"
+edition = "2024"
 license = "BUSL-1.1" # "Business Source License 1.1"
 license-file = "LICENSE"
 repository = "https://github.com/Cosmian/tee-tools"
@@ -23,29 +24,32 @@ repository = "https://github.com/Cosmian/tee-tools"
 [workspace.dependencies]
 base64 = "0.22"
 asn1-rs = "0.7"
-asn1 = "0.21"
-bincode = "1.3"
-der = { version = "0.7", features = ["alloc", "derive", "flagset", "oid"] }
+asn1 = "0.24"
+der = { version = "0.7", features = ["alloc", "derive", "flagset", "oid", "pem"] }
 ecdsa = { version = "0.16", features = ["sha2", "spki"] }
 elliptic-curve = "0.13"
 hex = { version = "0.4", features = ["serde"] }
-hkdf = "0.12"
+hkdf = "0.13"
+jose-jwk = { version = "0.1.2", default-features = false }
 log = "0.4"
 openssl = { version = "0.10", features = ["vendored"] }
 p256 = { version = "0.13", features = ["arithmetic", "pkcs8", "ecdsa-core"] }
-reqwest = { version = "0.12", default-features = false, features = [
+pem = "3.0"
+reqwest = { version = "0.13", default-features = false, features = [
     "json",
-    "rustls-tls",
+    "rustls",
     "blocking",
 ] }
-rsa = "0.9"
-scroll = { version = "0.12", features = ["derive"] }
+rustls = { version = "0.23", features = ["aws_lc_rs"] }
+scroll = { version = "0.13", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde-hex = "0.1"
-sev = { git = "https://github.com/virtee/sev", tag = "v5.0.0", default-features = false }
-sha2 = "0.10"
+# temporary use commit hash 2b4e157 after tag v7.1.0
+sev = { git = "https://github.com/virtee/sev", rev = "2b4e157", features = ["sev", "snp", "openssl", "serde"] }
+sha2 = "0.11"
 spki = "0.7"
 thiserror = "2.0"
+tss-esapi = "7.7"
 x509-cert = { version = "0.2", features = ["builder", "hazmat"] }
-x509-parser = "0.17"
+x509-parser = "0.18"

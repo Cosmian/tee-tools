@@ -19,7 +19,5 @@ pub enum Error {
     #[error(transparent)]
     CryptoP256Error(#[from] p256::ecdsa::Error),
     #[error(transparent)]
-    NixError(#[from] nix::errno::Errno),
-    #[error(transparent)]
     SgxError(#[from] sgx_quote::error::Error),
 }

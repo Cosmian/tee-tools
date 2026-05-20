@@ -11,13 +11,9 @@ p256 = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
-tss-esapi = "7.6"
+tss-esapi = { workspace = true }
 
 [dev-dependencies]
 env_logger = "0.11"
 log = "0.4"
-test-log = { version = "0.2", features = ["trace"] }
-tracing-subscriber = { version = "0.3", default-features = false, features = [
-    "env-filter",
-    "fmt",
-] }
+test-log = { version = "0.2" }
