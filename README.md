@@ -10,7 +10,7 @@ Collection of Rust libraries for local and remote attestation of Intel SGX/TDX, 
 | [maa_client](crate/maa_client/) | High-level API for Microsoft Azure Attestation service |
 | [pccs_client](crate/pccs_client/) | High-level API for Intel Provisioning Certification Cache Service |
 | [ratls](crate/ratls/) | Remote Attestation integration with Transport Layer Security |
-| [sev_quote](crate/sev_quote/) | Generation and verification of AMND SEV-SNP attestation report |
+| [sev_quote](crate/sev_quote/) | Generation and verification of AMD SEV-SNP attestation report |
 | [sgx_pck_extension](crate/sgx_pck_extension/) | Parsing of Intel SGX Provisioning Certification Key ASN.1 extension |
 | [sgx_quote](crate/sgx_quote/) | Generation and verification of Intel SGX attestation report |
 | [tdx_quote](crate/tdx_quote/) | Generation and verification of Intel TDX attestation report |
