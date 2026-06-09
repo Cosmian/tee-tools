@@ -1,0 +1,18 @@
+[package]
+name = "gcp_tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+autotests = false
+autobenches = false
+
+[dependencies]
+sev_quote = { path = "../../crate/sev_quote" }
+tdx_quote = { path = "../../crate/tdx_quote" }
+tee_attestation = { path = "../../crate/tee_attestation" }
+
+[[test]]
+name = "gcp_integration_tests"
+path = "src/test.rs"
+harness = true

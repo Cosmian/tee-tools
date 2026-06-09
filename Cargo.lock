@@ -181,6 +181,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws_tests"
+version = "2.0.1"
+dependencies = [
+ "sev_quote",
+ "tdx_quote",
+ "tee_attestation",
+]
+
+[[package]]
 name = "azure_cvm"
 version = "2.0.1"
 dependencies = [
@@ -198,6 +207,15 @@ dependencies = [
  "thiserror 2.0.18",
  "tss-esapi",
  "zerocopy",
+]
+
+[[package]]
+name = "azure_tests"
+version = "2.0.1"
+dependencies = [
+ "azure_cvm",
+ "sev_quote",
+ "tee_attestation",
 ]
 
 [[package]]
@@ -801,6 +819,15 @@ dependencies = [
  "memchr",
  "pin-project-lite",
  "slab",
+]
+
+[[package]]
+name = "gcp_tests"
+version = "2.0.1"
+dependencies = [
+ "sev_quote",
+ "tdx_quote",
+ "tee_attestation",
 ]
 
 [[package]]

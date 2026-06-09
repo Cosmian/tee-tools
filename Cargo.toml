@@ -12,6 +12,9 @@ members = [
     "crate/tee_attestation",
     "crate/tls-cert",
     "crate/tpm_quote",
+    "tests/azure_tests",
+    "tests/gcp_tests",
+    "tests/aws_tests",
 ]
 
 [workspace.package]
