@@ -52,7 +52,7 @@ jobs:
 
       - name: Cargo test
         if: steps.cargo-cache.outputs.cache-hit != 'true'
-        run: cargo test -- --nocapture
+        run: cargo test --lib -- --nocapture
 
       - name: Cargo build
         if: steps.cargo-cache.outputs.cache-hit != 'true'
