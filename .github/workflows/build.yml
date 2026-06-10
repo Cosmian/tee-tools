@@ -12,13 +12,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache dependencies
-        id: cargo-cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ github.ref_name }}
-          cache-bin: "true"
-
       - name: Install dependencies
         run: |
           sudo curl -fsSLo /usr/share/keyrings/intel-sgx-deb.asc https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key
@@ -31,6 +24,13 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
+
+      - name: Cache dependencies
+        id: cargo-cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ github.sha }}
+          cache-bin: "true"
 
       - name: Install cargo-machete
         if: steps.cargo-cache.outputs.cache-hit != 'true'
