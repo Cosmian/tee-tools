@@ -1,0 +1,32 @@
+---
+on:
+  # Run only on pull requests
+  pull_request:
+
+name: Pull request
+
+jobs:
+  cleanup: # we remove the Github cache to avoid any conflict
+    name: Clean Github cache
+    uses: Cosmian/reusable_workflows/.github/workflows/cleanup_cache.yml@main
+    secrets: inherit
+
+  build-binaries:
+    needs: cleanup
+    name: Build binaries
+    uses: ./.github/workflows/build.yml
+
+  image:
+    strategy:
+      fail-fast: false
+      matrix:
+        distrib: [ubuntu]  # rhel
+        techno: [sev]  # tdx
+    name: (GCP) ${{ matrix.distrib }} - ${{ matrix.techno }}
+    needs:
+      - build-binaries
+    secrets: inherit
+    uses: ./.github/workflows/gcp.yml
+    with:
+      techno: ${{ matrix.techno }}
+      distrib: ${{ matrix.distrib }}

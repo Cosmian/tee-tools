@@ -1,4 +1,6 @@
-on: [push]
+on:
+  push:
+  workflow_call:
 
 name: Continuous integration
 
@@ -15,9 +17,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ github.ref_name }}
+          cache-bin: "true"
 
       - name: Install dependencies
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
         run: |
           sudo curl -fsSLo /usr/share/keyrings/intel-sgx-deb.asc https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key
           echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-sgx-deb.asc] https://download.01.org/intel-sgx/sgx_repo/ubuntu noble main" | sudo tee /etc/apt/sources.list.d/intel-sgx.list
@@ -35,25 +37,22 @@ jobs:
         run: cargo install cargo-machete
 
       - name: Cargo fmt
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
         run: cargo fmt --all -- --check
 
       - name: Cargo check
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
         run: cargo check
 
       - name: Clippy
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
         run: cargo clippy -- -D warnings
 
       - name: Machete (deps checker)
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
         run: cargo machete
 
       - name: Cargo test
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
         run: cargo test --lib -- --nocapture
 
+      - name: Build test binaries
+        run: cargo test --tests --no-run
+
       - name: Cargo build
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
         run: cargo build --release

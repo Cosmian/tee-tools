@@ -1,0 +1,135 @@
+---
+name: Integration tests for GCP
+
+on:
+  workflow_call:
+    inputs:
+      distrib:
+        required: true
+        type: string
+      techno:
+        required: true
+        type: string
+
+env:
+  GCP_DEV_PROJECT: cosmian-dev
+  GCP_PUBLIC_PROJECT: cosmian-public
+
+jobs:
+  test-ansible:
+    name: Ansible - ${{ inputs.distrib }} - ${{ inputs.techno }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Create env variables
+        id: env
+        run: |
+          TIMESTAMP="$(date -u +'%Y%m%d%H%M%S')"
+          echo "TIMESTAMP=$TIMESTAMP" >> "$GITHUB_OUTPUT"
+          echo "CI_INSTANCE=gh-ci-a-$TIMESTAMP-${{ inputs.distrib }}-${{ inputs.techno }}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cargo cache
+        id: cargo-cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ github.ref_name }}
+
+      - name: GCP auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GOOGLE_COSMIAN_DEV_CREDENTIALS }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: latest
+
+      - name: Launch GCP instance
+        id: run-gcp-instance
+        env:
+          CI_INSTANCE: ${{ steps.env.outputs.ci_instance }}
+        run: |
+          set -ex
+
+          if [ "${{ inputs.techno }}" = "sev" ]; then
+            MACHINE_TYPE="n2d-standard-2"
+            ZONE="europe-west4-a"
+            CONFIDENTIAL_COMPUTE_TYPE="SEV_SNP"
+            MIN_CPU_PLATFORM="AMD Milan"
+          else
+            MACHINE_TYPE="c3-standard-4"
+            ZONE="us-central1-a"
+            CONFIDENTIAL_COMPUTE_TYPE="TDX"
+            MIN_CPU_PLATFORM="AUTOMATIC"
+          fi
+
+          if [ "${{ inputs.distrib }}" = "ubuntu" ]; then
+            IMAGE_OPTIONS="--image-project=ubuntu-os-cloud --project $GCP_DEV_PROJECT"
+            IMAGE_NAME="ubuntu-2404-noble-amd64-v20250805"
+          else
+            IMAGE_OPTIONS="--image-project=rhel-cloud --project $GCP_DEV_PROJECT"
+            IMAGE_NAME="rhel-10-v20260210"
+          fi
+
+          ssh-keygen -t rsa -b 4096 -C "$CI_INSTANCE@example.com" -f $HOME/.ssh/id_rsa -q -N ""
+          PUBKEY=$(cat $HOME/.ssh/id_rsa.pub)
+
+          gcloud compute instances create $CI_INSTANCE \
+            --machine-type "$MACHINE_TYPE" \
+            --zone "$ZONE" \
+            --min-cpu-platform="$MIN_CPU_PLATFORM" \
+            --confidential-compute-type="$CONFIDENTIAL_COMPUTE_TYPE" \
+            --image="$IMAGE_NAME" \
+            $IMAGE_OPTIONS \
+            --tags "$CI_INSTANCE-fw" \
+            --maintenance-policy=TERMINATE \
+            --max-run-duration=120m \
+            --instance-termination-action=DELETE \
+            --boot-disk-size=20 \
+            --metadata=ssh-keys="cosmian:$PUBKEY"
+          IP_ADDR=$(gcloud compute instances describe $CI_INSTANCE --format='get(networkInterfaces[0].accessConfigs[0].natIP)' --zone=$ZONE)
+          echo "IP_ADDR=${IP_ADDR}" >> "$GITHUB_OUTPUT"
+
+          # Wait for VM to be ready
+          sleep 60
+
+      - name: Create Firewall rule for SSH
+        env:
+          CI_INSTANCE: ${{ steps.env.outputs.ci_instance }}
+        run: |
+          gcloud compute firewall-rules create ${CI_INSTANCE}-allow-ssh \
+            --network=default \
+            --allow=tcp:22 \
+            --target-tags=$CI_INSTANCE-fw
+
+      - name: Execute integration tests on GCP instance
+        env:
+          IP_ADDR: ${{ steps.run-gcp-instance.outputs.IP_ADDR }}
+        run: |
+          set -ex
+
+          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $HOME/.ssh/id_rsa target/debug/deps/gcp_integration_tests-*[!.d] cosmian@$IP_ADDR:/home/cosmian
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null cosmian@$IP_ADDR "sudo ./gcp_integration_tests-* --show-output"
+
+      - name: Stop and delete GCP instance
+        if: always() # We want to run this step even if the previous one fails
+        env:
+          CI_INSTANCE: ${{ steps.env.outputs.ci_instance }}
+        run: |
+          set +e
+
+          if [ "${{ inputs.techno }}" = "sev" ]; then
+            ZONE="europe-west4-a"
+          else
+            ZONE="us-central1-a"
+          fi
+
+          gcloud compute instances delete --quiet $CI_INSTANCE --zone "$ZONE" --project $GCP_DEV_PROJECT
+          gcloud compute firewall-rules delete ${CI_INSTANCE}-allow-ssh --quiet
+
+          set -e
