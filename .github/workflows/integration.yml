@@ -1,6 +1,5 @@
 ---
 on:
-  # Run only on pull requests
   pull_request:
 
 name: Integration tests on cloud providers
@@ -16,17 +15,32 @@ jobs:
     name: Build binaries
     uses: ./.github/workflows/build.yml
 
-  image:
+  gcp:
     strategy:
       fail-fast: false
       matrix:
         distrib: [ubuntu]  # rhel
         techno: [sev]  # tdx
-    name: (GCP) ${{ matrix.distrib }} - ${{ matrix.techno }}
+    name: GCP
     needs:
       - build-binaries
     secrets: inherit
     uses: ./.github/workflows/gcp.yml
+    with:
+      techno: ${{ matrix.techno }}
+      distrib: ${{ matrix.distrib }}
+
+  azure:
+    strategy:
+      fail-fast: false
+      matrix:
+        distrib: [ubuntu]  # rhel
+        techno: [sev]  # tdx
+    name: Azure
+    needs:
+      - build-binaries
+    secrets: inherit
+    uses: ./.github/workflows/azure.yml
     with:
       techno: ${{ matrix.techno }}
       distrib: ${{ matrix.distrib }}

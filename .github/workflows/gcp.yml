@@ -17,7 +17,7 @@ env:
 
 jobs:
   tests:
-    name: ${{ inputs.distrib }} - ${{ inputs.techno }}
+    name: Integration tests
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -28,7 +28,7 @@ jobs:
         run: |
           TIMESTAMP="$(date -u +'%Y%m%d%H%M%S')"
           echo "TIMESTAMP=$TIMESTAMP" >> "$GITHUB_OUTPUT"
-          echo "CI_INSTANCE=gh-ci-a-$TIMESTAMP-${{ inputs.distrib }}-${{ inputs.techno }}" >> "$GITHUB_OUTPUT"
+          echo "CI_INSTANCE=gh-ci-$TIMESTAMP-${{ inputs.distrib }}-${{ inputs.techno }}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,7 +52,7 @@ jobs:
       - name: Launch GCP instance
         id: run-gcp-instance
         env:
-          CI_INSTANCE: ${{ steps.env.outputs.ci_instance }}
+          CI_INSTANCE: ${{ steps.env.outputs.CI_INSTANCE }}
         run: |
           set -ex
 
@@ -76,8 +76,8 @@ jobs:
             IMAGE_NAME="rhel-10-v20260210"
           fi
 
-          ssh-keygen -t rsa -b 4096 -C "$CI_INSTANCE@example.com" -f $HOME/.ssh/id_rsa -q -N ""
-          PUBKEY=$(cat $HOME/.ssh/id_rsa.pub)
+          ssh-keygen -t ed25519 -C "$CI_INSTANCE@cosmian.com" -f $HOME/.ssh/id_ed25519 -q -N ""
+          PUBKEY=$(cat $HOME/.ssh/id_ed25519.pub)
 
           gcloud compute instances create $CI_INSTANCE \
             --machine-type "$MACHINE_TYPE" \
@@ -100,7 +100,7 @@ jobs:
 
       - name: Create Firewall rule for SSH
         env:
-          CI_INSTANCE: ${{ steps.env.outputs.ci_instance }}
+          CI_INSTANCE: ${{ steps.env.outputs.CI_INSTANCE }}
         run: |
           gcloud compute firewall-rules create ${CI_INSTANCE}-allow-ssh \
             --network=default \
@@ -113,14 +113,14 @@ jobs:
         run: |
           set -ex
 
-          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $HOME/.ssh/id_rsa target/debug/deps/gcp_integration_tests-*[!.d] cosmian@$IP_ADDR:/home/cosmian
+          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $HOME/.ssh/id_ed25519 target/debug/deps/gcp_integration_tests-*[!.d] cosmian@$IP_ADDR:/home/cosmian
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null cosmian@$IP_ADDR "sudo chmod +x /home/cosmian/gcp_integration_tests-*"
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null cosmian@$IP_ADDR "sudo /home/cosmian/gcp_integration_tests-* --show-output"
 
       - name: Stop and delete GCP instance
         if: always() # We want to run this step even if the previous one fails
         env:
-          CI_INSTANCE: ${{ steps.env.outputs.ci_instance }}
+          CI_INSTANCE: ${{ steps.env.outputs.CI_INSTANCE }}
         run: |
           set +e
 

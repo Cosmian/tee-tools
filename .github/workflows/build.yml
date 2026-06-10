@@ -59,7 +59,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-binaries
-          path: target/debug/deps/gcp_integration_tests-*[!.d]
+          path: |
+            target/debug/deps/aws_integration_tests-*[!.d]
+            target/debug/deps/az_integration_tests-*[!.d]
+            target/debug/deps/gcp_integration_tests-*[!.d]
 
       - name: Cargo build
         run: cargo build --release
