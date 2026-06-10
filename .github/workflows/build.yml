@@ -2,7 +2,7 @@ on:
   push:
   workflow_call:
 
-name: Continuous integration
+name: Rust build, test and lint
 
 jobs:
   check:
@@ -19,22 +19,12 @@ jobs:
           sudo apt-get update && sudo apt-get install -y tpm2-tools libtss2-dev libtdx-attest=1.26.100.1-noble1 libtdx-attest-dev=1.26.100.1-noble1
 
       - name: Install Rust toolchain and components
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           components: rustfmt, clippy
 
-      - name: Cache dependencies
-        id: cargo-cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ${{ github.sha }}
-          cache-bin: "true"
-          cache-targets: "true"
-
       - name: Install cargo-machete
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
         run: cargo install cargo-machete
 
       - name: Cargo fmt
@@ -43,10 +33,10 @@ jobs:
       - name: Cargo check
         run: cargo check
 
-      - name: Clippy
+      - name: Cargo clippy
         run: cargo clippy -- -D warnings
 
-      - name: Machete (deps checker)
+      - name: Cargo machete (deps checker)
         run: cargo machete
 
       - name: Cargo test
