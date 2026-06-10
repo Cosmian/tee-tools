@@ -114,7 +114,8 @@ jobs:
           set -ex
 
           scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $HOME/.ssh/id_rsa target/debug/deps/gcp_integration_tests-*[!.d] cosmian@$IP_ADDR:/home/cosmian
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null cosmian@$IP_ADDR "sudo ./gcp_integration_tests-* --show-output"
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null cosmian@$IP_ADDR "ls -al /home/cosmian"
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null cosmian@$IP_ADDR "sudo /home/cosmian/gcp_integration_tests-* --show-output"
 
       - name: Stop and delete GCP instance
         if: always() # We want to run this step even if the previous one fails
