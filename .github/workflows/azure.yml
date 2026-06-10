@@ -51,7 +51,7 @@ jobs:
           set -ex
 
           if [ "${{ inputs.distrib }}" = "ubuntu" ]; then
-            IMAGE_TO_INSTANTIATE="base-image-0-1-17-ubuntu-sev"
+            IMAGE_TO_INSTANTIATE="/subscriptions/bc07f5de-3498-43b8-94aa-34b4a34a89b8/resourceGroups/packer-snp/providers/Microsoft.Compute/galleries/cosmian_packer/images/base-image-ubuntu-sev/versions/0.1.17"
           else
             IMAGE_TO_INSTANTIATE="RedHat:rhel-cvm:10_1_cvm:10.1.2026011314"
           fi
