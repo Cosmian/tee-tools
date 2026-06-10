@@ -3,7 +3,7 @@ on:
   # Run only on pull requests
   pull_request:
 
-name: Pull request
+name: Integration tests on cloud providers
 
 jobs:
   cleanup: # we remove the Github cache to avoid any conflict

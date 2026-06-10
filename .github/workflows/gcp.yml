@@ -1,5 +1,5 @@
 ---
-name: Integration tests for GCP
+name: Integration tests on GCP
 
 on:
   workflow_call:
@@ -17,7 +17,7 @@ env:
 
 jobs:
   tests:
-    name: Ansible - ${{ inputs.distrib }} - ${{ inputs.techno }}
+    name: ${{ inputs.distrib }} - ${{ inputs.techno }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -33,14 +33,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cargo cache
-        id: cargo-cache
-        uses: Swatinem/rust-cache@v2
+      - name: Download test binaries
+        uses: actions/download-artifact@v4
         with:
-          shared-key: ${{ github.sha }}
-          cache-bin: "true"
-          cache-targets: "true"
-          save-if: "false"  # only read, don't overwrite the build cache
+          name: test-binaries
+          path: target/debug/deps/
 
       - name: GCP auth
         uses: google-github-actions/auth@v2
