@@ -37,7 +37,10 @@ jobs:
         id: cargo-cache
         uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ github.ref_name }}
+          shared-key: ${{ github.sha }}
+          cache-bin: "true"
+          cache-targets: "true"
+          save-if: "false"  # only read, don't overwrite the build cache
 
       - name: GCP auth
         uses: google-github-actions/auth@v2

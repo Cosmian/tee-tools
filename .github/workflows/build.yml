@@ -29,8 +29,9 @@ jobs:
         id: cargo-cache
         uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ github.sha }}
+          shared-key: ${{ github.sha }}
           cache-bin: "true"
+          cache-targets: "true"
 
       - name: Install cargo-machete
         if: steps.cargo-cache.outputs.cache-hit != 'true'
