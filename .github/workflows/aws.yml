@@ -1,0 +1,111 @@
+---
+name: Integration tests on AWS
+
+on:
+  workflow_call:
+    inputs:
+      distrib:
+        required: true
+        type: string
+      techno:
+        required: true
+        type: string
+
+jobs:
+  test-ansible:
+    name: Integration tests
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Create env variables
+        id: env
+        run: |
+          TIMESTAMP="$(date -u +'%Y%m%d%H%M%S')"
+          echo "TIMESTAMP=$TIMESTAMP" >> "$GITHUB_OUTPUT"
+          echo "CI_INSTANCE=gh-ci-$TIMESTAMP-${{ inputs.distrib }}-${{ inputs.techno }}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download test binaries
+        uses: actions/download-artifact@v8
+        with:
+          name: test-binaries
+          path: target/debug/deps/
+
+      - name: AWS auth
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-west-1
+
+      - name: Launch AWS instance
+        id: run-aws-instance
+        env:
+          CI_INSTANCE: ${{ steps.env.outputs.CI_INSTANCE }}
+        run: |
+          set -ex
+
+          aws ec2 create-security-group --group-name "${CI_INSTANCE}-sg" --description "Security group for integration tests"
+          aws ec2 authorize-security-group-ingress --group-name "${CI_INSTANCE}-sg" --protocol tcp --port 22 --cidr 0.0.0.0/0
+
+          if [ "${{ inputs.distrib }}" = "ubuntu" ]; then
+            export AMI_BASE=$(aws ec2 describe-images --filters "Name=name,Values=base-image-*" --query "Images | sort_by(@, &CreationDate) | [-1].ImageId" --output text)
+            echo "USERNAME=ubuntu" >> "$GITHUB_OUTPUT"
+          else
+            export AMI_BASE=$(aws ec2 describe-images --filters "Name=name,Values=RHEL-9.4.0_HVM-20250519-x86_64-0-Hourly2-GP3" --query "Images[*].{ID:ImageId}" --output text)
+            echo "USERNAME=ec2-user" >> "$GITHUB_OUTPUT"
+          fi
+
+          AMI=$(aws ec2 run-instances \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${{env.CI_INSTANCE}}}]" \
+            --image-id "$AMI_BASE" \
+            --instance-type c6a.2xlarge \
+            --cpu-options AmdSevSnp=enabled \
+            --block-device-mappings "DeviceName=/dev/sda1,Ebs={VolumeType=gp3,VolumeSize=100}" \
+            --key-name packer \
+            --security-groups "${CI_INSTANCE}-sg" \
+            --metadata-options "InstanceMetadataTags=enabled,HttpTokens=optional,HttpEndpoint=enabled,HttpPutResponseHopLimit=2" \
+            --region eu-west-1 \
+            --placement AvailabilityZone=eu-west-1c \
+            --query 'Instances[0].InstanceId' --output text)
+
+          # Wait for VM to be ready
+          aws ec2 wait instance-status-ok --instance-ids "$AMI"
+
+          IP_ADDR=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${CI_INSTANCE}" --query 'Reservations[*].Instances[*].PublicIpAddress' --output text)
+          echo "IP_ADDR=${IP_ADDR}" >> "$GITHUB_OUTPUT"
+
+          timeout 20m bash -c "until nc -z $IP_ADDR 22; do sleep 60; done"
+
+      - name: Execute integration tests on AWS instance
+        env:
+          IP_ADDR: ${{ steps.run-aws-instance.outputs.IP_ADDR }}
+          USERNAME: ${{ steps.run-aws-instance.outputs.USERNAME }}
+          SSH_KEY: ${{ secrets.PACKER_AWS_SSH_PRIVATE_KEY }}
+        run: |
+          set -ex
+
+          mkdir -p $HOME/.ssh
+          echo "$SSH_KEY" > $HOME/.ssh/packer
+          chmod 600 $HOME/.ssh/packer
+
+          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $HOME/.ssh/packer target/debug/deps/aws_integration_tests-*[!.d] $USERNAME@$IP_ADDR:/home/$USERNAME
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $HOME/.ssh/packer $USERNAME@$IP_ADDR "sudo chmod +x /home/$USERNAME/aws_integration_tests-*"
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $HOME/.ssh/packer $USERNAME@$IP_ADDR "sudo /home/$USERNAME/aws_integration_tests-* --show-output"
+
+      - name: Stop and delete AWS instance
+        if: always()
+        env:
+          CI_INSTANCE: ${{ steps.env.outputs.CI_INSTANCE }}
+        run: |
+          set -x
+          set +e
+
+          CI_INSTANCE_ID="$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${CI_INSTANCE}" --query 'Reservations[].Instances[].[InstanceId]' --output text)"
+          aws ec2 terminate-instances --instance-ids "$CI_INSTANCE_ID"
+          aws ec2 wait instance-terminated --instance-ids "$CI_INSTANCE_ID"
+          aws ec2 delete-security-group --group-name "${CI_INSTANCE}-sg"

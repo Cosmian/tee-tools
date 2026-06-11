@@ -38,3 +38,18 @@ jobs:
     with:
       techno: ${{ matrix.techno }}
       distrib: ${{ matrix.distrib }}
+
+  aws:
+    strategy:
+      fail-fast: false
+      matrix:
+        distrib: [ubuntu]  # rhel
+        techno: [sev]  # tdx
+    name: AWS
+    needs:
+      - build-binaries
+    secrets: inherit
+    uses: ./.github/workflows/aws.yml
+    with:
+      techno: ${{ matrix.techno }}
+      distrib: ${{ matrix.distrib }}
