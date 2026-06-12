@@ -81,7 +81,9 @@ jobs:
             --ssh-key-value '$PUBKEY'; do sleep 60; done"
 
           RUNNER_IP="$(curl --silent --url https://api.ipify.org)"
-          az vm open-port -g $RESOURCE_GROUP -n $CI_INSTANCE --priority 100 --port 22 --source-address-prefixes "$RUNNER_IP"
+          az network nsg rule create -g $RESOURCE_GROUP --nsg-name ${CI_INSTANCE}NSG -n allow-ssh \
+            --priority 100 --protocol Tcp --destination-port-ranges 22 \
+            --source-address-prefixes "$RUNNER_IP/32" --access Allow
           IP_ADDR=$(az vm show -d -g $RESOURCE_GROUP -n $CI_INSTANCE --query publicIps -o tsv)
           echo "IP_ADDR=${IP_ADDR}" >> "$GITHUB_OUTPUT"
 
