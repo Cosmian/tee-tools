@@ -48,8 +48,9 @@ jobs:
         run: |
           set -ex
 
-          aws ec2 create-security-group --group-name "${CI_INSTANCE}-sg" --description "Security group for integration tests"
-          aws ec2 authorize-security-group-ingress --group-name "${CI_INSTANCE}-sg" --protocol tcp --port 22 --cidr 0.0.0.0/0
+          RUNNER_IP="$(curl -fsSL https://checkip.amazonaws.com)/32"
+          SG_ID="$(aws ec2 create-security-group --group-name "${CI_INSTANCE}-sg" --description "Security group for integration tests" --query 'GroupId' --output text)"
+          aws ec2 authorize-security-group-ingress --group-id "$SG_ID" --protocol tcp --port 22 --cidr "$RUNNER_IP"
 
           if [ "${{ inputs.distrib }}" = "ubuntu" ]; then
             export AMI_BASE=$(aws ec2 describe-images --filters "Name=name,Values=base-image-*" --query "Images | sort_by(@, &CreationDate) | [-1].ImageId" --output text)
@@ -66,8 +67,8 @@ jobs:
             --cpu-options AmdSevSnp=enabled \
             --block-device-mappings "DeviceName=/dev/sda1,Ebs={VolumeType=gp3,VolumeSize=100}" \
             --key-name packer \
-            --security-groups "${CI_INSTANCE}-sg" \
-            --metadata-options "InstanceMetadataTags=enabled,HttpTokens=optional,HttpEndpoint=enabled,HttpPutResponseHopLimit=2" \
+            --security-group-ids "$SG_ID" \
+            --metadata-options "InstanceMetadataTags=enabled,HttpTokens=required,HttpEndpoint=enabled,HttpPutResponseHopLimit=2" \
             --region eu-west-1 \
             --placement AvailabilityZone=eu-west-1c \
             --query 'Instances[0].InstanceId' --output text)
