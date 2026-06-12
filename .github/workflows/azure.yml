@@ -10,6 +10,9 @@ on:
       techno:
         required: true
         type: string
+    secrets:
+      AZURE_CREDS_JSON:
+        required: true
 
 env:
   RESOURCE_GROUP: packer-snp
@@ -20,6 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    steps:
       - name: Create env variables
         id: env
         run: |
@@ -76,7 +80,7 @@ jobs:
             --admin-username cosmian \
             --ssh-key-value '$PUBKEY'; do sleep 60; done"
 
-          RUNNER_IP="$(curl -fsSL https://checkip.amazonaws.com)/32"
+          RUNNER_IP="$(curl --silent --url https://api.ipify.org)"
           az vm open-port -g $RESOURCE_GROUP -n $CI_INSTANCE --priority 100 --port 22 --source-address-prefixes "$RUNNER_IP"
           IP_ADDR=$(az vm show -d -g $RESOURCE_GROUP -n $CI_INSTANCE --query publicIps -o tsv)
           echo "IP_ADDR=${IP_ADDR}" >> "$GITHUB_OUTPUT"

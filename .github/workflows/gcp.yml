@@ -10,6 +10,9 @@ on:
       techno:
         required: true
         type: string
+    secrets:
+      GOOGLE_COSMIAN_DEV_CREDENTIALS:
+        required: true
 
 env:
   GCP_DEV_PROJECT: cosmian-dev
@@ -21,6 +24,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    steps:
       - name: Create env variables
         id: env
         run: |
@@ -100,9 +104,13 @@ jobs:
         env:
           CI_INSTANCE: ${{ steps.env.outputs.CI_INSTANCE }}
         run: |
+          set -ex
+          RUNNER_IP="$(curl --silent --url https://api.ipify.org)"
           gcloud compute firewall-rules create ${CI_INSTANCE}-allow-ssh \
+            --project $GCP_DEV_PROJECT \
             --network=default \
             --allow=tcp:22 \
+            --source-ranges="$RUNNER_IP/32" \
             --target-tags=$CI_INSTANCE-fw
 
       - name: Execute integration tests on GCP instance

@@ -10,6 +10,13 @@ on:
       techno:
         required: true
         type: string
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      PACKER_AWS_SSH_PRIVATE_KEY:
+        required: true
 
 jobs:
   test-ansible:
@@ -48,9 +55,9 @@ jobs:
         run: |
           set -ex
 
-          RUNNER_IP="$(curl -fsSL https://checkip.amazonaws.com)/32"
+          RUNNER_IP="$(curl --silent --url https://api.ipify.org)"
           SG_ID="$(aws ec2 create-security-group --group-name "${CI_INSTANCE}-sg" --description "Security group for integration tests" --query 'GroupId' --output text)"
-          aws ec2 authorize-security-group-ingress --group-id "$SG_ID" --protocol tcp --port 22 --cidr "$RUNNER_IP"
+          aws ec2 authorize-security-group-ingress --group-id "$SG_ID" --protocol tcp --port 22 --cidr "$RUNNER_IP/32"
 
           if [ "${{ inputs.distrib }}" = "ubuntu" ]; then
             export AMI_BASE=$(aws ec2 describe-images --filters "Name=name,Values=base-image-*" --query "Images | sort_by(@, &CreationDate) | [-1].ImageId" --output text)
