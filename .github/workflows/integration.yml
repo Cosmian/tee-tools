@@ -18,7 +18,8 @@ jobs:
     name: GCP
     needs:
       - build-binaries
-    secrets: inherit
+    secrets:
+      GOOGLE_COSMIAN_DEV_CREDENTIALS: ${{ secrets.GOOGLE_COSMIAN_DEV_CREDENTIALS }}
     uses: ./.github/workflows/gcp.yml
     with:
       techno: ${{ matrix.techno }}
@@ -33,7 +34,8 @@ jobs:
     name: Azure
     needs:
       - build-binaries
-    secrets: inherit
+    secrets:
+      AZURE_CREDS_JSON: ${{ secrets.AZURE_CREDS_JSON }}
     uses: ./.github/workflows/azure.yml
     with:
       techno: ${{ matrix.techno }}
@@ -48,7 +50,10 @@ jobs:
     name: AWS
     needs:
       - build-binaries
-    secrets: inherit
+    secrets:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      PACKER_AWS_SSH_PRIVATE_KEY: ${{ secrets.PACKER_AWS_SSH_PRIVATE_KEY }}
     uses: ./.github/workflows/aws.yml
     with:
       techno: ${{ matrix.techno }}
