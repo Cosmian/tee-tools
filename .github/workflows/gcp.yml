@@ -129,6 +129,6 @@ jobs:
           fi
 
           gcloud compute instances delete --quiet $CI_INSTANCE --zone "$ZONE" --project $GCP_DEV_PROJECT
-          gcloud compute firewall-rules delete ${CI_INSTANCE}-allow-ssh --quiet
+          gcloud compute firewall-rules delete ${CI_INSTANCE}-allow-ssh --quiet --project $GCP_DEV_PROJECT
 
           set -e
