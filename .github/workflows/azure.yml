@@ -78,8 +78,8 @@ jobs:
             --admin-username cosmian \
             --ssh-key-value '$PUBKEY'; do sleep 60; done"
 
-          az vm open-port -g $RESOURCE_GROUP -n $CI_INSTANCE --priority 100 --port 22
-
+          RUNNER_IP="$(curl -fsSL https://checkip.amazonaws.com)/32"
+          az vm open-port -g $RESOURCE_GROUP -n $CI_INSTANCE --priority 100 --port 22 --source-address-prefixes "$RUNNER_IP"
           IP_ADDR=$(az vm show -d -g $RESOURCE_GROUP -n $CI_INSTANCE --query publicIps -o tsv)
           echo "IP_ADDR=${IP_ADDR}" >> "$GITHUB_OUTPUT"
 
