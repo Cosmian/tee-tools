@@ -20,8 +20,6 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      id-token: write
-    steps:
       - name: Create env variables
         id: env
         run: |
