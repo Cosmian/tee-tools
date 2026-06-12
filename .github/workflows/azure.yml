@@ -1,0 +1,112 @@
+---
+name: Integration tests on Azure
+
+on:
+  workflow_call:
+    inputs:
+      distrib:
+        required: true
+        type: string
+      techno:
+        required: true
+        type: string
+    secrets:
+      AZURE_CREDS_JSON:
+        required: true
+
+env:
+  RESOURCE_GROUP: packer-snp
+
+jobs:
+  tests:
+    name: Integration tests
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Create env variables
+        id: env
+        run: |
+          TIMESTAMP="$(date -u +'%Y%m%d%H%M%S')"
+          echo "TIMESTAMP=$TIMESTAMP" >> "$GITHUB_OUTPUT"
+          echo "CI_INSTANCE=gh-ci-$TIMESTAMP-${{ inputs.distrib }}-${{ inputs.techno }}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download test binaries
+        uses: actions/download-artifact@v8
+        with:
+          name: test-binaries
+          path: target/debug/deps/
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDS_JSON }}
+
+      - name: Launch Azure instance
+        id: run-azure-instance
+        env:
+          CI_INSTANCE: ${{ steps.env.outputs.CI_INSTANCE }}
+        run: |
+          set -ex
+
+          if [ "${{ inputs.distrib }}" = "ubuntu" ]; then
+            IMAGE_TO_INSTANTIATE="/subscriptions/bc07f5de-3498-43b8-94aa-34b4a34a89b8/resourceGroups/packer-snp/providers/Microsoft.Compute/galleries/cosmian_packer/images/base-image-ubuntu-sev/versions/0.1.17"
+          else
+            IMAGE_TO_INSTANTIATE="RedHat:rhel-cvm:10_1_cvm:10.1.2026011314"
+          fi
+
+          if [ "${{ inputs.techno }}" = "sev" ]; then
+            VM_SIZE="Standard_DC2ads_v5"
+          else
+            # TDX
+            VM_SIZE="Standard_DC2es_v5"
+          fi
+
+          ssh-keygen -t ed25519 -C "$CI_INSTANCE@cosmian.com" -f $HOME/.ssh/id_ed25519 -q -N ""
+          PUBKEY=$(cat $HOME/.ssh/id_ed25519.pub)
+
+          timeout 30m bash -c "until az vm create -g $RESOURCE_GROUP -n $CI_INSTANCE \
+            --image ${IMAGE_TO_INSTANTIATE} \
+            --security-type ConfidentialVM \
+            --os-disk-security-encryption-type VMGuestStateOnly \
+            --size $VM_SIZE \
+            --enable-vtpm true \
+            --nic-delete-option delete \
+            --os-disk-delete-option delete \
+            --data-disk-delete-option delete \
+            --admin-username cosmian \
+            --ssh-key-value '$PUBKEY'; do sleep 60; done"
+
+          RUNNER_IP="$(curl --silent --url https://api.ipify.org)"
+          az network nsg rule create -g $RESOURCE_GROUP --nsg-name ${CI_INSTANCE}NSG -n allow-ssh \
+            --priority 100 --protocol Tcp --destination-port-ranges 22 \
+            --source-address-prefixes "$RUNNER_IP/32" --access Allow
+          IP_ADDR=$(az vm show -d -g $RESOURCE_GROUP -n $CI_INSTANCE --query publicIps -o tsv)
+          echo "IP_ADDR=${IP_ADDR}" >> "$GITHUB_OUTPUT"
+
+          # Wait for VM to be ready
+          sleep 60
+
+      - name: Execute integration tests on Azure instance
+        env:
+          IP_ADDR: ${{ steps.run-azure-instance.outputs.IP_ADDR }}
+        run: |
+          set -ex
+
+          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $HOME/.ssh/id_ed25519 target/debug/deps/az_integration_tests-*[!.d] cosmian@$IP_ADDR:/home/cosmian
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null cosmian@$IP_ADDR "sudo chmod +x /home/cosmian/az_integration_tests-*"
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null cosmian@$IP_ADDR "sudo /home/cosmian/az_integration_tests-* --show-output"
+
+      - name: Stop and delete Azure instance
+        if: always()
+        env:
+          CI_INSTANCE: ${{ steps.env.outputs.CI_INSTANCE }}
+        run: |
+          set -x
+          set +e
+          az vm delete -g $RESOURCE_GROUP -n $CI_INSTANCE --yes
+          az network public-ip delete -g $RESOURCE_GROUP -n ${CI_INSTANCE}PublicIP
+          az network nsg delete --resource-group $RESOURCE_GROUP -n ${CI_INSTANCE}NSG

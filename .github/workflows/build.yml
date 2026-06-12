@@ -1,59 +1,58 @@
-on: [push]
+on:
+  push:
+  workflow_call:
 
-name: Continuous integration
+name: Rust build, test and lint
 
 jobs:
   check:
-    name: Check
+    name: Rust CI
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Cache dependencies
-        id: cargo-cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ github.ref_name }}
+        uses: actions/checkout@v6
 
       - name: Install dependencies
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
         run: |
           sudo curl -fsSLo /usr/share/keyrings/intel-sgx-deb.asc https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key
           echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-sgx-deb.asc] https://download.01.org/intel-sgx/sgx_repo/ubuntu noble main" | sudo tee /etc/apt/sources.list.d/intel-sgx.list
           sudo apt-get update && sudo apt-get install -y tpm2-tools libtss2-dev libtdx-attest=1.26.100.1-noble1 libtdx-attest-dev=1.26.100.1-noble1
 
       - name: Install Rust toolchain and components
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           components: rustfmt, clippy
 
       - name: Install cargo-machete
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
         run: cargo install cargo-machete
 
       - name: Cargo fmt
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
         run: cargo fmt --all -- --check
 
       - name: Cargo check
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
         run: cargo check
 
-      - name: Clippy
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
+      - name: Cargo clippy
         run: cargo clippy -- -D warnings
 
-      - name: Machete (deps checker)
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
+      - name: Cargo machete (deps checker)
         run: cargo machete
 
       - name: Cargo test
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
-        run: cargo test -- --nocapture
+        run: cargo test --lib -- --nocapture
+
+      - name: Build test binaries
+        run: cargo test --tests --no-run
+
+      - name: Upload test binaries
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-binaries
+          path: |
+            target/debug/deps/aws_integration_tests-*[!.d]
+            target/debug/deps/az_integration_tests-*[!.d]
+            target/debug/deps/gcp_integration_tests-*[!.d]
 
       - name: Cargo build
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
         run: cargo build --release
