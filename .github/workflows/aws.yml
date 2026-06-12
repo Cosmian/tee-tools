@@ -108,4 +108,5 @@ jobs:
           CI_INSTANCE_ID="$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${CI_INSTANCE}" --query 'Reservations[].Instances[].[InstanceId]' --output text)"
           aws ec2 terminate-instances --instance-ids "$CI_INSTANCE_ID"
           aws ec2 wait instance-terminated --instance-ids "$CI_INSTANCE_ID"
-          aws ec2 delete-security-group --group-name "${CI_INSTANCE}-sg"
+          SG_ID="$(aws ec2 describe-security-groups --filters "Name=group-name,Values=${CI_INSTANCE}-sg" --query 'SecurityGroups[0].GroupId' --output text)"
+          aws ec2 delete-security-group --group-id "$SG_ID"
