@@ -10,7 +10,7 @@ members = [
     "crate/sgx_pck_extension",
     "crate/tdx_quote",
     "crate/tee_attestation",
-    "crate/tls-cert",
+    "crate/tls_cert",
     "crate/tpm_quote",
     "tests/azure_tests",
     "tests/gcp_tests",
@@ -31,6 +31,7 @@ asn1 = "0.24"
 der = { version = "0.7", features = ["alloc", "derive", "flagset", "oid", "pem"] }
 ecdsa = { version = "0.16", features = ["sha2", "spki"] }
 elliptic-curve = "0.13"
+env_logger = "0.11"
 hex = { version = "0.4", features = ["serde"] }
 hkdf = "0.13"
 jose-jwk = { version = "0.1.2", default-features = false }

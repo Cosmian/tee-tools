@@ -1,5 +1,5 @@
 [package]
-name = "tls-cert"
+name = "tls_cert"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
