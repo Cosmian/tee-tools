@@ -15,6 +15,7 @@ Collection of Rust libraries for local and remote attestation of Intel SGX/TDX, 
 | [sgx_quote](crate/sgx_quote/) | Generation and verification of Intel SGX attestation report |
 | [tdx_quote](crate/tdx_quote/) | Generation and verification of Intel TDX attestation report |
 | [tee_attestation](crate/tee_attestation/) | High-level library to detect and attest Intel SGX, TDX or AMD SEV-SNP |
+| [tls_cert](crate/tls_cert/) | Fetch TLS peer certificate without verification |
 | [tpm_quote](crate/tpm_quote/) | Quote generation and verification of TPM 2.0 PCR registers |
 
 ## Compilation
@@ -28,5 +29,8 @@ cargo build
 ## Tests
 
 ```console
-cargo test -- --nocapture
+# unit tests
+cargo test --lib -- --nocapture
+# integration tests running on machine configured with a TEE
+cargo test --tests -- --nocapture
 ```
